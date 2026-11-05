@@ -677,7 +677,7 @@ npm run typecheck && npm run lint
 | `dashboard-ops.spec.ts` | Overview totals unchanged by training sales; sale → payment → document → PDF traceability |
 | `pos.spec.ts` | **The acceptance scenario:** sales staff over-discounts → server blocks finalising → admin approves remotely → customer agrees → UPI QR (not treated as paid) → 12-digit UTR + explicit confirmation → GST tax invoice `OE/yy-yy/n` → PDF; 403 on price/cost edits; UTR reuse rejected; scanner-style SKU + Enter |
 
-Last full run (5 Nov 2026, this repository): **197 unit (21 files), 144 integration (17 files) and 34 browser tests passed.** Four browser tests that create accounts run on the desktop profile only, so they show as skipped on the mobile profile.
+Last full run (5 Nov 2026, this repository): **202 unit (22 files), 144 integration (17 files) and 34 browser tests passed.** Four browser tests that create accounts run on the desktop profile only, so they show as skipped on the mobile profile.
 
 ### Recorded walkthrough (videos)
 
