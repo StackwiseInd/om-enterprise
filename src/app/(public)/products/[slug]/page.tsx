@@ -38,8 +38,9 @@ export async function generateMetadata({ params }: PageProps<"/products/[slug]">
   return {
     title: p.name,
     description,
-    // A product with a photo shares that photo; without one, the page keeps the shop's own picture.
-    openGraph: photo ? { ...SITE_OPEN_GRAPH, title: p.name, description, images: [photo] } : undefined,
+    // A product with a photo shares that photo. Without one, the key is left out (not set to
+    // undefined, which would clear it) so the page keeps the shop's Open Graph details and picture.
+    ...(photo ? { openGraph: { ...SITE_OPEN_GRAPH, title: p.name, description, images: [photo] } } : {}),
     robots: p.isSample ? { index: false } : undefined,
   };
 }
