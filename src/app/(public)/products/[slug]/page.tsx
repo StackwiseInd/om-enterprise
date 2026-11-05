@@ -16,6 +16,7 @@ import { drawingKind } from "@/components/public/technical-drawing";
 import { KeepCodes } from "@/components/public/keep-codes";
 import { getSiteData, telHref } from "@/components/public/site-data";
 import { formatPhone } from "@/lib/india";
+import { SITE_OPEN_GRAPH } from "@/lib/site-meta";
 
 async function loadProduct(slug: string) {
   await connection();
@@ -33,10 +34,12 @@ export async function generateMetadata({ params }: PageProps<"/products/[slug]">
   const p = await loadProduct(slug);
   if (!p) return { title: "Product not found" };
   const description = (p.description ?? `${p.name} — ${p.category} at OM ENTERPRISE, Naswadi.`).slice(0, 160);
+  const photo = p.images[0]?.url;
   return {
     title: p.name,
     description,
-    openGraph: { title: p.name, description, images: p.images[0]?.url ? [p.images[0].url] : undefined },
+    // A product with a photo shares that photo; without one, the page keeps the shop's own picture.
+    openGraph: photo ? { ...SITE_OPEN_GRAPH, title: p.name, description, images: [photo] } : undefined,
     robots: p.isSample ? { index: false } : undefined,
   };
 }

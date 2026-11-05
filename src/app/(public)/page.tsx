@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { ArrowRight, ArrowUpRight, MessageCircle, Phone, Search } from "lucide-react";
 import { getPublicBrands, searchPublicProducts } from "@/server/services/public-catalog";
 import { formatPhone, whatsappLink } from "@/lib/india";
+import { businessJsonLd, jsonLdHtml } from "@/lib/site-meta";
 import { LinkButton } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/page";
 import { ProductGrid, ProductGridSkeleton } from "@/components/public/product-card";
@@ -13,6 +14,9 @@ import { addressLines, getSiteData, mapsHref, telHref } from "@/components/publi
 export default function HomePage() {
   return (
     <>
+      <Suspense fallback={null}>
+        <BusinessJsonLd />
+      </Suspense>
       <Hero />
       <CategoriesSection />
       <FeaturedSection />
@@ -20,6 +24,14 @@ export default function HomePage() {
       <ShopSection />
     </>
   );
+}
+
+/** The shop's details for search engines (schema.org HardwareStore), from the business settings. */
+async function BusinessJsonLd() {
+  const { business } = await getSiteData();
+  const site = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const data = businessJsonLd(business, { site, map: mapsHref(business) });
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(data) }} />;
 }
 
 /* ------------------------------------------------------------------ */
