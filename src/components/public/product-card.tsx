@@ -55,9 +55,9 @@ export function ProductCard({ p, index = 0 }: { p: PublicProductCard; index?: nu
 const ruledGrid = "grid grid-cols-2 overflow-hidden rounded-xl border-l border-t border-navy-100 bg-white lg:grid-cols-3 xl:grid-cols-4";
 
 /** Ruled grid: each cell draws its right and bottom hairline, like a printed catalogue page. */
-export function ProductGrid({ items }: { items: PublicProductCard[] }) {
+export function ProductGrid({ items, className }: { items: PublicProductCard[]; className?: string }) {
   return (
-    <div className={`stagger ${ruledGrid}`}>
+    <div className={cn("stagger", ruledGrid, className)}>
       {items.map((p, i) => (
         <ProductCard key={p.slug} p={p} index={i} />
       ))}

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ClipboardList, MessageCircle, Minus, Plus } from "lucide-react";
 import type { PublicVariant } from "@/server/services/public-catalog";
 import { useToast } from "@/components/ui/toast";
@@ -41,6 +41,18 @@ export function ProductPurchase({
   const { selectedId, setSelectedId } = useProductSelection(variants[0]?.id ?? "");
   const [qtyText, setQtyText] = useState("1");
   const selected = variants.find((v) => v.id === selectedId) ?? variants[0];
+
+  // Phones: while the main buttons are off screen, a bar at the bottom keeps the price and the
+  // actions in reach. Starts hidden (as rendered on the server) until the observer reports.
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const [actionsInView, setActionsInView] = useState(true);
+  useEffect(() => {
+    const el = actionsRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([entry]) => setActionsInView(entry.isIntersecting));
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   const attrs = useMemo(
     () => variantAttributes.filter((a) => variants.length > 1 && variants.every((v) => v.attributes[a])),
@@ -189,7 +201,7 @@ export function ProductPurchase({
           </ul>
         )}
 
-        <div className="mt-6 flex flex-wrap items-end gap-3">
+        <div ref={actionsRef} className="mt-6 flex flex-wrap items-end gap-3">
           <div>
             <label htmlFor="qty" className="label-sm block text-navy-500">
               Quantity · {selected.unit.toLowerCase()}
@@ -247,6 +259,48 @@ export function ProductPurchase({
         )}
         {!whatsapp && <div className="pb-5" />}
       </div>
+
+      {(enquiriesEnabled || whatsapp) && (
+        <div
+          data-bottom-bar
+          data-product-bar
+          inert={actionsInView}
+          aria-hidden={actionsInView}
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-30 border-t border-navy-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 transition-transform duration-300 ease-out-quart lg:hidden",
+            actionsInView ? "translate-y-full" : "translate-y-0",
+          )}
+        >
+          <div className="mx-auto flex max-w-2xl items-center gap-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs text-navy-500">{selected.name}</div>
+              <div key={selected.id} className="animate-fade-in tabular text-lg font-semibold leading-tight tracking-[-0.02em] text-navy-950">
+                {selected.price ? formatPrice(unitAmount ?? selected.price.amount) : <span className="text-sm font-medium text-navy-500">Price on request</span>}
+              </div>
+            </div>
+            {whatsapp && (
+              <a
+                href={whatsappLink(whatsapp, waText)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Ask about this item on WhatsApp"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-navy-200 text-emerald-600 transition-colors hover:border-navy-900"
+              >
+                <MessageCircle className="h-5 w-5" />
+              </a>
+            )}
+            {enquiriesEnabled && (
+              <button
+                type="button"
+                onClick={add}
+                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-navy-900 px-4 text-[15px] font-semibold text-white transition-colors hover:bg-navy-800 active:translate-y-px"
+              >
+                <ClipboardList className="h-[18px] w-[18px]" /> {inList ? "Add more" : "Add to list"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -48,6 +48,10 @@ export function PriceTag({
       {from && <span className="label-sm text-navy-500">from</span>}
       <span className="tabular text-3xl font-semibold tracking-[-0.02em] text-navy-950 sm:text-[2.5rem]">{formatPrice(price.amount)}</span>
       {showMrp && <span className="tabular text-[13px] text-navy-400 line-through">MRP {formatPrice(price.mrp)}</span>}
+      {/* Rounded down, so the saving is never overstated. */}
+      {showMrp && Math.floor((1 - Number(price.amount) / Number(price.mrp)) * 100) >= 1 && (
+        <span className="tabular text-[13px] font-semibold text-emerald-700">{Math.floor((1 - Number(price.amount) / Number(price.mrp)) * 100)}% below MRP</span>
+      )}
       {price.taxLabel && <span className="text-xs text-navy-500">{price.taxLabel}</span>}
     </span>
   );

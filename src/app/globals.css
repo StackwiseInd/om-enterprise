@@ -295,6 +295,10 @@
   body:has([data-bottom-bar]) {
     --toast-lift: 4.5rem;
   }
+  /* A product page's bottom bar never covers the end of the page. */
+  body:has([data-product-bar]) {
+    padding-bottom: 4.5rem;
+  }
 }
 
 /* The root crossfade runs alongside a product figure's morph from its card to the product page. */
