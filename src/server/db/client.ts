@@ -21,11 +21,17 @@ declare global {
 function createPool() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
-  return new Pool({
+  const pool = new Pool({
     connectionString: withExplicitSsl(url),
     max: Number(process.env.DB_POOL_MAX ?? 10),
     idleTimeoutMillis: 30_000,
   });
+  // A server that drops an idle connection (Neon does when it pauses an idle database) makes the
+  // pool emit "error". With no listener Node treats that as a crash, taking down whatever request
+  // the instance is serving. The pool has already discarded the client; the next query opens a
+  // new connection, so logging is all that is needed.
+  pool.on("error", (err) => console.warn("[db] idle connection closed:", err.message));
+  return pool;
 }
 
 export function getPool(): Pool {
