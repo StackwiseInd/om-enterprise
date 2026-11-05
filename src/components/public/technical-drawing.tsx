@@ -9,6 +9,7 @@ export type DrawingKind =
   | "pipe"
   | "socket-pipe"
   | "elbow"
+  | "elbow-45"
   | "tee"
   | "coupler"
   | "valve"
@@ -23,6 +24,12 @@ export type DrawingKind =
   | "hose"
   | "box";
 
+/**
+ * A 45° elbow or bend: "Elbow 45°", "Bend 45° Plain", "45 degree bend", "Bend 45". Not a 45 mm size,
+ * and not 45 inside another number or a model code ("87.5°", "AC-45").
+ */
+const DEG_45 = /(?<![\d.-])45\s*(?:°|º|˚|-?\s*deg)|\b(?:elbow|bend)\s+45\b(?!\s*mm)/;
+
 /** Pick a drawing from the product name, falling back to its category icon. */
 export function drawingKind(name: string, icon: string | null | undefined): DrawingKind {
   const n = name.toLowerCase();
@@ -35,7 +42,7 @@ export function drawingKind(name: string, icon: string | null | undefined): Draw
   if (/mixer/.test(n)) return "mixer";
   if (/cock|faucet|\btap\b|spout|shower/.test(n)) return "tap";
   if (/\btrap\b/.test(n)) return "trap";
-  if (/elbow|\bbend\b/.test(n)) return "elbow";
+  if (/elbow|\bbend\b/.test(n)) return DEG_45.test(n) ? "elbow-45" : "elbow";
   if (/\btee\b|single y/.test(n)) return "tee";
   if (/coupler|union|reducer|adapt|\bcap\b|socket|\b(fta|mta|fabt|mabt)\b|nipple/.test(n)) return "coupler";
   if (/\bpipe\b/.test(n)) return icon === "drain" ? "socket-pipe" : "pipe";
@@ -52,8 +59,19 @@ export function drawingKind(name: string, icon: string | null | undefined): Draw
 function D({ d, gold, thin }: { d: string; gold?: boolean; thin?: boolean }) {
   return <path d={d} pathLength={1} data-draw="" className={gold ? "text-gold-500" : undefined} stroke="currentColor" strokeWidth={thin ? 1 : 1.6} />;
 }
-function E({ cx, cy, rx, ry, thin }: { cx: number; cy: number; rx: number; ry: number; thin?: boolean }) {
-  return <ellipse cx={cx} cy={cy} rx={rx} ry={ry} pathLength={1} data-draw="" strokeWidth={thin ? 1 : 1.6} />;
+function E({ cx, cy, rx, ry, thin, angle }: { cx: number; cy: number; rx: number; ry: number; thin?: boolean; angle?: number }) {
+  return (
+    <ellipse
+      cx={cx}
+      cy={cy}
+      rx={rx}
+      ry={ry}
+      transform={angle ? `rotate(${angle} ${cx} ${cy})` : undefined}
+      pathLength={1}
+      data-draw=""
+      strokeWidth={thin ? 1 : 1.6}
+    />
+  );
 }
 /** Hidden edge (dashed) — not animated. */
 function Hidden({ d }: { d: string }) {
@@ -123,6 +141,23 @@ function shapes(kind: DrawingKind, marker: string): ReactNode {
           <path d="M108 112 A16 16 0 0 0 124 96" className="text-gold-500" stroke="currentColor" strokeWidth={1} />
           <text x={128} y={118} className="fill-current tabular text-navy-400" stroke="none" fontSize={9}>
             90°
+          </text>
+        </>
+      );
+    case "elbow-45":
+      // The same pipe and bend radius as the 90° elbow (bend centre 96,60; centre line r58), turned
+      // through 45° only. The angle is marked from the run of the inlet, through the vertex at 120,118.
+      return (
+        <>
+          <Centre d="M30 118 H96 A58 58 0 0 0 137.01 101.01 L196.41 41.62 M120.02 118 H178" />
+          <D d="M44 100 H96 A40 40 0 0 0 124.28 88.28 L175.2 37.37" />
+          <D d="M44 136 H96 A76 76 0 0 0 149.74 113.74 L200.65 62.83" />
+          <D d="M62 96 V140 M161.05 45.86 L192.17 76.97" thin />
+          <E cx={44} cy={118} rx={6} ry={18} />
+          <E cx={187.92} cy={50.1} rx={18} ry={6} angle={45} />
+          <path d="M160.02 118 A40 40 0 0 0 148.31 89.72" className="text-gold-500" stroke="currentColor" strokeWidth={1} />
+          <text x={170} y={109} className="fill-current tabular text-navy-400" stroke="none" fontSize={9}>
+            45°
           </text>
         </>
       );

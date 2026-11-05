@@ -17,6 +17,22 @@ describe("drawingKind", () => {
     expect(drawingKind("Aris Bib Cock with Wall Flange MFLT-101", "bath")).toBe("tap");
     expect(drawingKind("Aris Pillar Cock MFLT-103", "bath")).toBe("pillar");
   });
+
+  it("draws 45° elbows and bends at 45°, and every other elbow at 90°", () => {
+    expect(drawingKind("Finolex ASTM Elbow 45°", "pipe")).toBe("elbow-45");
+    expect(drawingKind("Finolex CPVC Schedule 80 Elbow 45°", "pipe")).toBe("elbow-45");
+    expect(drawingKind("Finolex SWR Bend 45° Plain", "drain")).toBe("elbow-45");
+    expect(drawingKind("Finolex SWR Selfit Bend 45° Double Socket", "drain")).toBe("elbow-45");
+    expect(drawingKind("Truflo CPVC Bend 45° Plain", "pipe")).toBe("elbow-45");
+    expect(drawingKind("UPVC 45 Degree Elbow", "pipe")).toBe("elbow-45");
+    expect(drawingKind("PVC Bend 45 Plain", "pipe")).toBe("elbow-45");
+
+    expect(drawingKind("Finolex CPVC Elbow 90°", "pipe")).toBe("elbow");
+    expect(drawingKind("Finolex ASTM Reducing Elbow 90° – Brass Insert", "pipe")).toBe("elbow");
+    expect(drawingKind("Finolex CPVC Sweep Bend", "pipe")).toBe("elbow");
+    expect(drawingKind("Finolex SWR Bend 87.5° Plain", "drain")).toBe("elbow");
+    expect(drawingKind("PVC Elbow 45 mm", "pipe")).toBe("elbow");
+  });
 });
 
 describe("KeepCodes", () => {
