@@ -41,7 +41,7 @@ async function BusinessJsonLd() {
 function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-rule bg-paper">
-      <Container className="relative grid gap-12 py-12 sm:py-16 lg:grid-cols-[1.25fr_0.75fr] lg:items-end lg:gap-16 lg:py-20">
+      <Container className="relative grid gap-10 py-12 sm:py-16 lg:grid-cols-[1.25fr_0.75fr] lg:items-center lg:gap-16 lg:py-20">
         <div>
           <Suspense fallback={<HeroCopySkeleton />}>
             <HeroCopy />
@@ -109,7 +109,7 @@ async function HeroActions() {
   const { business } = await getSiteData();
   return (
     <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
-      <LinkButton href="/products" size="lg" icon={<ArrowRight className="h-4 w-4" />} className="flex-row-reverse">
+      <LinkButton href="/products" size="lg" variant="outline" icon={<ArrowRight className="h-4 w-4" />} className="flex-row-reverse">
         Browse the catalogue
       </LinkButton>
       {business.whatsapp && (
@@ -139,17 +139,19 @@ async function CounterCard() {
   const total = top.reduce((n, c) => n + c.productCount, 0);
   if (!brands.length) return null;
   return (
-    <aside className="relative animate-[rise_520ms_var(--ease-out-quart)_180ms_both] rounded-xl border border-navy-200 bg-white shadow-lift">
+    <aside className="relative animate-[rise_520ms_var(--ease-out-quart)_180ms_both] rounded-xl border border-navy-200 bg-white shadow-card">
       <div className="flex items-center justify-between border-b border-navy-100 px-5 py-3.5">
         <span className="label-sm text-navy-500">Brands at the counter</span>
         <span className="text-[13px] text-navy-500">{brands.length} brands</span>
       </div>
-      <ul className="divide-y divide-navy-100 px-5 py-1">
+      {/* On a phone the names wrap as one short list, so the categories come sooner; from sm up,
+          one ruled row per brand with its count. */}
+      <ul className="flex flex-wrap gap-x-5 px-5 py-2.5 sm:block sm:divide-y sm:divide-navy-100 sm:py-1">
         {brands.map((b) => (
           <li key={b.slug}>
-            <Link href={`/products?brand=${encodeURIComponent(b.slug)}`} className="group flex items-baseline justify-between gap-4 py-2.5 text-[15px]">
+            <Link href={`/products?brand=${encodeURIComponent(b.slug)}`} className="group flex items-baseline justify-between gap-4 py-1.5 text-[15px] sm:py-2.5">
               <span className="font-semibold text-navy-950 transition-colors group-hover:text-gold-700">{b.name}</span>
-              <span className="shrink-0 tabular text-[13px] text-navy-500">
+              <span className="hidden shrink-0 tabular text-[13px] text-navy-500 sm:inline">
                 {b.productCount} <span className="text-navy-400">{b.productCount === 1 ? "item" : "items"}</span>
               </span>
             </Link>
@@ -184,7 +186,7 @@ const CATEGORY_DRAWING: Record<string, DrawingKind> = {
 
 function CategoriesSection() {
   return (
-    <section className="bg-white py-16 sm:py-24">
+    <section className="bg-white pb-14 pt-16 sm:pb-20 sm:pt-24">
       <Container>
         <SectionHeading
           title="Shop by category"
@@ -222,16 +224,18 @@ async function CategoryGrid() {
           key={c.slug}
           href={`/category/${c.slug}`}
           style={{ ["--i" as string]: i }}
-          className="group relative flex flex-col bg-white p-3.5 shadow-[inset_-1px_-1px_0_var(--color-navy-100)] transition-colors duration-200 hover:bg-paper/60 sm:p-5"
+          className="group relative flex flex-col border-b border-r border-navy-100 bg-white transition-colors duration-200 hover:bg-paper/50"
         >
-          <div className="blueprint mb-3 flex aspect-[5/3] items-center justify-center rounded-md sm:mb-4">
-            <TechnicalDrawing kind={CATEGORY_DRAWING[c.icon ?? ""] ?? "box"} className="h-[86%] w-[86%] transition-transform duration-500 ease-out group-hover:scale-[1.05]" />
+          <div className="blueprint flex aspect-[5/3] items-center justify-center overflow-hidden border-b border-navy-100">
+            <TechnicalDrawing kind={CATEGORY_DRAWING[c.icon ?? ""] ?? "box"} className="h-[78%] w-[78%] transition-transform duration-500 ease-out group-hover:scale-[1.05]" />
           </div>
-          <h3 className="text-[15px] font-semibold leading-snug tracking-[-0.01em] text-navy-950 sm:text-[17px]">{c.name}</h3>
-          <p className="mt-0.5 text-[13px] text-navy-500 tabular">
-            {c.productCount} {c.productCount === 1 ? "item" : "items"}
-          </p>
-          {c.description && <p className="mt-1.5 hidden text-[13px] leading-relaxed text-navy-500 sm:line-clamp-2">{c.description}</p>}
+          <div className="flex-1 px-3.5 pb-4 pt-3 sm:px-5 sm:pb-5 sm:pt-4">
+            <h3 className="text-[15px] font-semibold leading-snug tracking-[-0.01em] text-navy-950 sm:text-[17px]">{c.name}</h3>
+            <p className="mt-0.5 text-[13px] text-navy-500 tabular">
+              {c.productCount} {c.productCount === 1 ? "item" : "items"}
+            </p>
+            {c.description && <p className="mt-1.5 hidden pr-5 text-[13px] leading-relaxed text-navy-500 sm:line-clamp-2">{c.description}</p>}
+          </div>
           <ArrowRight aria-hidden className="absolute bottom-5 right-5 h-4 w-4 -translate-x-1 text-navy-300 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:text-navy-900 group-hover:opacity-100" />
         </Link>
       ))}
@@ -245,20 +249,23 @@ async function CategoryGrid() {
 
 function FeaturedSection() {
   return (
-    <section className="border-y border-rule bg-paper py-16 sm:py-24">
+    <section className="bg-white">
       <Container>
-        <SectionHeading
-          title="Popular at the counter"
-          description="The items customers ask for most often. Prices are confirmed at billing."
-          action={
-            <Link href="/products" className="group inline-flex items-center gap-1.5 text-sm font-semibold text-navy-950">
-              <span className="link-draw">View catalogue</span> <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          }
-        />
-        <Suspense fallback={<ProductGridSkeleton count={8} />}>
-          <FeaturedGrid />
-        </Suspense>
+        {/* A rule the width of the content separates it from the categories above (both on white). */}
+        <div className="border-t border-navy-100 pb-16 pt-14 sm:pb-24 sm:pt-20">
+          <SectionHeading
+            title="Popular at the counter"
+            description="The items customers ask for most often. Prices are confirmed at billing."
+            action={
+              <Link href="/products" className="group inline-flex items-center gap-1.5 text-sm font-semibold text-navy-950">
+                <span className="link-draw">View catalogue</span> <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            }
+          />
+          <Suspense fallback={<ProductGridSkeleton count={8} />}>
+            <FeaturedGrid />
+          </Suspense>
+        </div>
       </Container>
     </section>
   );
@@ -289,12 +296,12 @@ const STEPS = [
 
 function OrderingSection() {
   return (
-    <section className="bg-white py-16 sm:py-24">
+    <section className="border-y border-rule bg-paper py-16 sm:py-24">
       <Container>
         <SectionHeading title="Order the way that suits you" description="Browse here, then talk to a person. No account, no online payment." />
-        <ol className="grid border-t border-navy-200 md:grid-cols-3">
+        <ol className="grid border-t border-rule md:grid-cols-3">
           {STEPS.map((s) => (
-            <li key={s.title} className="flex flex-col border-b border-navy-100 py-6 md:border-b-0 md:border-r md:px-7 md:first:pl-0 md:last:border-r-0">
+            <li key={s.title} className="flex flex-col border-b border-rule py-6 md:border-b-0 md:border-r md:px-7 md:first:pl-0 md:last:border-r-0">
               <h3 className="text-lg font-semibold tracking-[-0.01em] text-navy-950">{s.title}</h3>
               <p className="mt-2 max-w-sm text-sm leading-relaxed text-navy-500">{s.text}</p>
               <Link href={s.href} className="group mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-navy-950">
@@ -314,7 +321,7 @@ function OrderingSection() {
 
 function ShopSection() {
   return (
-    <section className="border-t border-rule bg-paper py-16 sm:py-24">
+    <section className="bg-white py-16 sm:py-24">
       <Container>
         <Suspense fallback={<Skeleton className="h-80 rounded-xl" />}>
           <ShopContent />
@@ -328,7 +335,7 @@ async function ShopContent() {
   const { business } = await getSiteData();
   const wa = business.whatsapp ? whatsappLink(business.whatsapp, "Hello OM ENTERPRISE, I have an enquiry.") : null;
   return (
-    <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+    <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-16">
       <div>
         <h2 className="headline text-[1.625rem] font-bold text-navy-950 sm:text-[2rem]">Visit {business.name}</h2>
         <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-navy-600">{business.about}</p>
@@ -339,7 +346,7 @@ async function ShopContent() {
           </LinkButton>
         </div>
       </div>
-      <div className="rounded-xl border border-navy-200 bg-white">
+      <div className="rounded-xl border border-navy-200 bg-white shadow-card">
         <div className="border-b border-navy-100 px-6 py-5">
           <div className="label-sm text-navy-500">Address</div>
           <address className="mt-2 text-[17px] not-italic leading-snug text-navy-950">

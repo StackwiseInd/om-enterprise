@@ -31,7 +31,7 @@ export function ProductCard({ p, index = 0 }: { p: PublicProductCard; index?: nu
     <ProductLink
       slug={p.slug}
       style={{ ["--i" as string]: index }}
-      className="group relative flex flex-col bg-white shadow-[inset_-1px_-1px_0_var(--color-navy-100)] transition-colors duration-200 hover:bg-paper/50 focus-visible:z-10"
+      className="group relative flex flex-col border-b border-r border-navy-100 bg-white transition-colors duration-200 hover:bg-paper/50 focus-visible:z-10"
     >
       <ProductFigure p={p} className="aspect-[4/3] border-b border-navy-100" />
       {p.isSample && <SampleBadge className="absolute left-3 top-3" />}
@@ -69,7 +69,7 @@ export function ProductGridSkeleton({ count = 8 }: { count?: number }) {
   return (
     <div className={ruledGrid} aria-busy="true" aria-label="Loading products">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-white shadow-[inset_-1px_-1px_0_var(--color-navy-100)]">
+        <div key={i} className="border-b border-r border-navy-100 bg-white">
           <div className="blueprint aspect-[4/3] border-b border-navy-100" />
           <div className="space-y-2.5 p-4">
             <div className="h-2.5 w-16 animate-pulse rounded-sm bg-navy-100" />
