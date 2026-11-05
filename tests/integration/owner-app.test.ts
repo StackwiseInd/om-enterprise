@@ -82,7 +82,7 @@ describe("the owner's day", () => {
   it("lists the setup steps with the GST type confirmed", async () => {
     const items = await setupChecklist();
     expect(items.map((i) => i.key)).toEqual(["tax", "upi", "prices", "staff", "alerts", "email", "whatsapp"]);
-    expect(items.find((i) => i.key === "tax")?.done).toBe(true);
+    expect(items.find((i) => i.key === "tax")).toMatchObject({ done: true, registrationType: "composition" });
     expect(items.find((i) => i.key === "email")).toMatchObject({ done: true, optional: true, href: null });
   });
 });

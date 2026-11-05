@@ -115,6 +115,12 @@ function Figure({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** The GST step names the type that was chosen once it is confirmed; until then it only asks for it. */
+function setupLabel(i: SetupItem, t: T): string {
+  if (i.key === "tax" && i.done && i.registrationType) return t(`setup.tax.${i.registrationType}`);
+  return t(`setup.${i.key}` as OwnerKey);
+}
+
 function Setup({ items, t }: { items: SetupItem[]; t: T }) {
   const required = items.filter((i) => !i.optional);
   const done = required.filter((i) => i.done).length;
@@ -135,7 +141,7 @@ function Setup({ items, t }: { items: SetupItem[]; t: T }) {
             {i.done ? <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /> : <Circle className="mt-0.5 h-5 w-5 shrink-0 text-navy-300" />}
             <div className="min-w-0 flex-1">
               <div className={cn("font-semibold", i.done ? "text-navy-500 line-through decoration-navy-300" : "text-navy-950")}>
-                {t(`setup.${i.key}` as OwnerKey)}
+                {setupLabel(i, t)}
                 {i.optional && !i.done && <span className="ml-1.5 text-xs font-normal text-navy-500">({t("optional")})</span>}
               </div>
               {!i.done && (

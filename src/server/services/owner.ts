@@ -13,6 +13,7 @@ import { approvalAlertEmail, dailySummaryEmail } from "@/server/email/owner-emai
 import { whatsappConfigured } from "@/server/whatsapp";
 import { istStartOfDay } from "@/lib/india";
 import { D, m, type Dec } from "@/lib/money";
+import type { Settings } from "@/lib/settings-schema";
 
 /**
  * The owner's phone app (/admin/app) and the emails the owner gets: one day's money in plain figures,
@@ -73,6 +74,8 @@ export interface SetupItem {
   done: boolean;
   /** For "prices": how many are still waiting. */
   count?: number;
+  /** For "tax": the GST registration type, once it is confirmed. */
+  registrationType?: NonNullable<Settings["tax"]["registrationType"]>;
   /** Optional: the shop can work without it. */
   optional?: boolean;
   /** Where to do it in the app; none when it is done once on the server. */
@@ -89,7 +92,7 @@ export async function setupChecklist(): Promise<SetupItem[]> {
     .innerJoin(roles, eq(roles.id, users.roleId))
     .where(and(eq(users.isActive, true), sql`${roles.key} <> 'super_admin'`));
   return [
-    { key: "tax", done: s.tax.registrationType !== null, href: "/dashboard/settings?section=tax" },
+    { key: "tax", done: s.tax.registrationType !== null, registrationType: s.tax.registrationType ?? undefined, href: "/dashboard/settings?section=tax" },
     { key: "upi", done: s.payments.upiEnabled && !!s.payments.upiVpa.trim(), href: "/dashboard/settings?section=payments" },
     { key: "prices", done: prices === 0, count: prices, href: "/dashboard/approvals" },
     { key: "staff", done: staff.c > 0, href: "/dashboard/staff" },
