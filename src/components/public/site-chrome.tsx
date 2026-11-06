@@ -4,6 +4,7 @@ import { ArrowUpRight, MessageCircle } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { formatPhone, whatsappLink } from "@/lib/india";
 import { HeaderClient } from "./header-client";
+import { getShopAccount } from "@/server/auth/shop-session";
 import { FloatGate } from "./float-gate";
 import { addressLines, addressShort, getSiteData, mapsHref, telHref } from "./site-data";
 
@@ -13,12 +14,14 @@ import { addressLines, addressShort, getSiteData, mapsHref, telHref } from "./si
 
 async function HeaderWithData() {
   const { business, categories } = await getSiteData();
+  const account = await getShopAccount().catch(() => null);
   return (
     <HeaderClient
       categories={categories.map((c) => ({ name: c.name, slug: c.slug, icon: c.icon, productCount: c.productCount, parentId: c.parentId }))}
       whatsapp={business.whatsapp || null}
       phone={business.phone || null}
       addressShort={addressShort(business)}
+      account={account ? { name: account.name } : null}
     />
   );
 }
@@ -82,7 +85,7 @@ async function FooterWithData() {
                 <Link href="/products" className={footLink}>All products</Link>
               </li>
               <li>
-                <Link href="/enquiry" className={footLink}>Enquiry list</Link>
+                <Link href="/enquiry" className={footLink}>Cart</Link>
               </li>
               <li>
                 <Link href="/about" className={footLink}>About us</Link>

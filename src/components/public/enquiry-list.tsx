@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ClipboardList, Minus, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Minus, Plus, QrCode, ShoppingCart, Trash2 } from "lucide-react";
 import { SampleBadge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api-client";
 import { formatPrice } from "@/lib/money";
@@ -30,7 +30,7 @@ function validQty(s: string, decimals: number) {
   return re.test(s) && Number(s) > 0;
 }
 
-export function EnquiryList({ whatsapp, priceNote, enquiriesEnabled }: { whatsapp: string | null; priceNote: string; enquiriesEnabled: boolean }) {
+export function EnquiryList({ whatsapp, priceNote, enquiriesEnabled, onlinePay }: { whatsapp: string | null; priceNote: string; enquiriesEnabled: boolean; onlinePay: boolean }) {
   const list = useEnquiryList();
   const [pricedState, setPriced] = useState<Priced | null>(null);
   const [loading, setLoading] = useState(false);
@@ -91,12 +91,12 @@ export function EnquiryList({ whatsapp, priceNote, enquiriesEnabled }: { whatsap
     <div className="grid gap-8 lg:grid-cols-[1.25fr_1fr]">
       <section aria-labelledby="list-heading">
         <h2 id="list-heading" className="flex items-center gap-2 border-b border-navy-200 pb-2.5 text-lg font-semibold tracking-[-0.01em] text-navy-950">
-          <ClipboardList className="h-[18px] w-[18px] text-gold-600" /> Your enquiry list
+          <ShoppingCart className="h-[18px] w-[18px] text-gold-600" /> Your cart
           {list.count > 0 && <span className="ml-auto text-[13px] font-normal text-navy-500 tabular">{list.count} {list.count === 1 ? "item" : "items"}</span>}
         </h2>
         {list.items.length === 0 ? (
           <div className="blueprint mt-5 rounded-xl border border-navy-200 p-10 text-center">
-            <p className="font-semibold text-navy-950">Your list is empty</p>
+            <p className="font-semibold text-navy-950">Your cart is empty</p>
             <p className="mt-1 text-sm text-navy-500">Add products from the catalogue, or just tell us what you need using the form.</p>
             <Link href="/products" className="mt-5 inline-flex h-10 items-center rounded-lg bg-navy-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-navy-800">
               Browse products
@@ -170,7 +170,7 @@ export function EnquiryList({ whatsapp, priceNote, enquiriesEnabled }: { whatsap
             )}
             <div className="mt-2 rounded-xl bg-navy-950 p-5 text-white">
               <div className="flex items-baseline justify-between gap-4">
-                <span className="label-sm text-navy-300">Indicative total</span>
+                <span className="label-sm text-navy-300">Total</span>
                 <span className="tabular text-2xl font-semibold tracking-[-0.02em]">{loading && !priced ? "…" : priced ? formatPrice(priced.total) : "—"}</span>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-navy-300">
@@ -178,12 +178,35 @@ export function EnquiryList({ whatsapp, priceNote, enquiriesEnabled }: { whatsap
                 {priceNote || "Prices are confirmed when we prepare your bill."} Final amount, availability and any delivery charges are confirmed by the shop.
               </p>
             </div>
+            {onlinePay && (
+              <div className="mt-4 rounded-xl border border-navy-200 bg-white p-5">
+                <div className="flex items-start gap-3">
+                  <QrCode className="mt-0.5 h-5 w-5 shrink-0 text-gold-600" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-navy-950">Pay online, collect from the store</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-navy-500">Sign in, add a discount code if you have one, and pay the exact amount by UPI. We confirm your payment and keep the items ready at the counter.</p>
+                  </div>
+                </div>
+                {priced && (!priced.allPriced || unavailable.length > 0 || priced.lines.some((l) => l.isSample)) ? (
+                  <p className="mt-4 rounded-lg bg-navy-50 px-4 py-3 text-sm text-navy-700">
+                    {unavailable.length ? "Remove items that are no longer listed to pay online." : priced.lines.some((l) => l.isSample) ? "Sample (demonstration) items can't be bought online." : "Items priced on request can't be paid online yet. Remove them, or send the cart as a request."}
+                  </p>
+                ) : (
+                  <Link
+                    href="/checkout"
+                    className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-navy-900 px-5 text-[15px] font-semibold text-white shadow-[inset_0_-1px_0_rgb(0_0_0/0.35)] transition-colors hover:bg-navy-800"
+                  >
+                    Checkout and pay by UPI <ArrowRight className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
+            )}
           </>
         )}
       </section>
       <section aria-labelledby="form-heading" className="rounded-xl border border-navy-200 bg-white p-5 sm:p-7 lg:self-start">
         <h2 id="form-heading" className="text-lg font-semibold tracking-[-0.01em] text-navy-950">
-          {list.items.length ? "Send your list to the shop" : "Tell us what you need"}
+          {list.items.length ? (onlinePay ? "Or send it as a request" : "Send your list to the shop") : "Tell us what you need"}
         </h2>
         <p className="mt-1 text-sm text-navy-500">We&apos;ll call or WhatsApp you to confirm. Nothing is charged online.</p>
         <div className="mt-5">

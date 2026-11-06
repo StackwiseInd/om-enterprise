@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { ArrowRight, ChevronDown, ClipboardList, MapPin, Menu, MessageCircle, Phone, Search, X } from "lucide-react";
+import { ArrowRight, ChevronDown, MapPin, Menu, MessageCircle, Phone, Search, ShoppingCart, UserRound, X } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { cn } from "@/components/ui/cn";
 import { formatPhone, whatsappLink } from "@/lib/india";
@@ -21,6 +21,8 @@ export interface HeaderProps {
   whatsapp: string | null;
   phone: string | null;
   addressShort: string | null;
+  /** The signed-in website customer, if any. */
+  account?: { name: string } | null;
 }
 
 const NAV = [
@@ -137,10 +139,10 @@ function EnquiryButton() {
     <Link
       href="/enquiry"
       className="relative flex h-10 items-center gap-2 rounded-lg px-2.5 text-navy-800 transition-colors hover:bg-navy-50 sm:px-3"
-      aria-label={`Enquiry list, ${count} ${count === 1 ? "item" : "items"}`}
+      aria-label={`Cart, ${count} ${count === 1 ? "item" : "items"}`}
     >
-      <ClipboardList className="h-[18px] w-[18px]" strokeWidth={1.75} />
-      <span className="hidden text-sm font-medium 2xl:inline">Enquiry list</span>
+      <ShoppingCart className="h-[18px] w-[18px]" strokeWidth={1.75} />
+      <span className="hidden text-sm font-medium 2xl:inline">Cart</span>
       {count > 0 && (
         <span
           key={count}
@@ -172,7 +174,7 @@ function SearchBox({ className, autoFocus, onSubmit }: { className?: string; aut
   );
 }
 
-export function HeaderClient({ categories, whatsapp, phone, addressShort }: HeaderProps) {
+export function HeaderClient({ categories, whatsapp, phone, addressShort, account }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const wa = whatsapp ? whatsappLink(whatsapp, "Hello OM ENTERPRISE, I have an enquiry about building materials.") : null;
@@ -233,6 +235,14 @@ export function HeaderClient({ categories, whatsapp, phone, addressShort }: Head
           </Suspense>
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             <SearchBox className="hidden w-52 md:block xl:w-60 2xl:w-72" />
+            <Link
+              href={account ? "/my-orders" : "/sign-in"}
+              className="flex h-10 items-center gap-2 rounded-lg px-2.5 text-navy-800 transition-colors hover:bg-navy-50 sm:px-3"
+              aria-label={account ? `My orders (${account.name})` : "Sign in"}
+            >
+              <UserRound className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              <span className="hidden max-w-28 truncate text-sm font-medium xl:inline">{account ? "My orders" : "Sign in"}</span>
+            </Link>
             <EnquiryButton />
             {wa && (
               <a
@@ -286,7 +296,15 @@ export function HeaderClient({ categories, whatsapp, phone, addressShort }: Head
                   onClick={() => setMenuOpen(false)}
                   className="flex items-center justify-between border-b border-navy-100 py-3 text-[17px] font-semibold text-navy-950"
                 >
-                  Enquiry list
+                  Cart
+                  <ArrowRight className="h-4 w-4 text-navy-300" />
+                </Link>
+                <Link
+                  href={account ? "/my-orders" : "/sign-in"}
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center justify-between border-b border-navy-100 py-3 text-[17px] font-semibold text-navy-950"
+                >
+                  {account ? "My orders" : "Sign in"}
                   <ArrowRight className="h-4 w-4 text-navy-300" />
                 </Link>
               </nav>

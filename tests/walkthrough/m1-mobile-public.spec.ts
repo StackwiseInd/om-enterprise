@@ -23,8 +23,8 @@ test("M1 · Public website on a phone", async ({ page }) => {
   await say(page, "Product page: choose a size and add to the enquiry list.");
   await page.goto("/products/sample-interior-emulsion");
   await tap(page.getByRole("button", { name: "10 L", exact: true }));
-  await tap(page.getByRole("button", { name: /Add to enquiry list|Add more to list/ }));
-  await check(page, "Added on the phone", () => expect(page.getByRole("link", { name: /Enquiry list, [1-9]/ }).filter({ visible: true }).first()).toBeVisible());
+  await tap(page.getByRole("button", { name: /^(Add to cart|Add more to cart)$/ }));
+  await check(page, "Added on the phone", () => expect(page.getByRole("link", { name: /Cart, [1-9]/ }).filter({ visible: true }).first()).toBeVisible());
   await page.goto("/enquiry");
   await check(page, "Enquiry page fits the phone", () => noSideScroll(page));
   await type(page.locator("#eq-name"), "Kalpesh");

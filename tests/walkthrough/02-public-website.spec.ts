@@ -43,8 +43,8 @@ test("02 · Public website: catalogue, search, product, enquiry & order request"
 
   await say(page, "Add two of them to the enquiry list.");
   await tap(page.getByRole("button", { name: "Increase quantity" }));
-  await tap(page.getByRole("button", { name: /Add to enquiry list|Add more to list/ }));
-  await check(page, "Enquiry list counter updates", () => expect(page.getByRole("link", { name: /Enquiry list, [1-9]/ }).filter({ visible: true }).first()).toBeVisible());
+  await tap(page.getByRole("button", { name: /^(Add to cart|Add more to cart)$/ }));
+  await check(page, "Cart counter updates", () => expect(page.getByRole("link", { name: /Cart, [1-9]/ }).filter({ visible: true }).first()).toBeVisible());
 
   await say(page, "The enquiry page: the customer's list, and a form to send it as an order request.");
   await page.goto("/enquiry");

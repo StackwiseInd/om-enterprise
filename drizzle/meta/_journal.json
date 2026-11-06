@@ -64,6 +64,13 @@
       "when": 1793085785561,
       "tag": "0008_staff_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793937788927,
+      "tag": "0009_online_shop",
+      "breakpoints": true
     }
   ]
 }

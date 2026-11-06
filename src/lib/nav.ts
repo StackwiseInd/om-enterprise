@@ -30,7 +30,9 @@ export const STAFF_NAV: NavGroup[] = [
       { href: "/dashboard/payments", label: "Payments", icon: "wallet", any: ["payments.view"] },
       { href: "/dashboard/documents", label: "Documents", icon: "file-text", any: ["documents.reprint", "sales.view_all"] },
       { href: "/dashboard/customers", label: "Customers", icon: "users", any: ["customers.view"] },
+      { href: "/dashboard/online-orders", label: "Online orders", icon: "shopping-bag", any: ["orders.view", "payments.verify"] },
       { href: "/dashboard/orders", label: "Website orders", icon: "globe", any: ["orders.view"] },
+      { href: "/dashboard/coupons", label: "Discount codes", icon: "ticket", any: ["discounts.configure"] },
     ],
   },
   {

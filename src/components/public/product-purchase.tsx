@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ClipboardList, MessageCircle, Minus, Plus } from "lucide-react";
+import { Check, MessageCircle, Minus, Plus, ShoppingCart } from "lucide-react";
 import type { PublicVariant } from "@/server/services/public-catalog";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/components/ui/cn";
@@ -100,9 +100,9 @@ export function ProductPurchase({
     });
     toast(
       <span>
-        Added to your enquiry list.{" "}
+        Added to your cart.{" "}
         <Link href="/enquiry" className="font-bold underline">
-          View list
+          View cart
         </Link>
       </span>,
     );
@@ -229,7 +229,7 @@ export function ProductPurchase({
               onClick={add}
               className="inline-flex h-12 min-w-[13rem] flex-1 items-center justify-center gap-2 rounded-lg bg-navy-900 px-5 text-[15px] font-semibold text-white shadow-[inset_0_-1px_0_rgb(0_0_0/0.35)] transition-[background-color,transform] hover:bg-navy-800 active:translate-y-px"
             >
-              <ClipboardList className="h-[18px] w-[18px]" /> {inList ? "Add more to list" : "Add to enquiry list"}
+              <ShoppingCart className="h-[18px] w-[18px]" /> {inList ? "Add more to cart" : "Add to cart"}
             </button>
           )}
         </div>
@@ -295,7 +295,7 @@ export function ProductPurchase({
                 onClick={add}
                 className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-navy-900 px-4 text-[15px] font-semibold text-white transition-colors hover:bg-navy-800 active:translate-y-px"
               >
-                <ClipboardList className="h-[18px] w-[18px]" /> {inList ? "Add more" : "Add to list"}
+                <ShoppingCart className="h-[18px] w-[18px]" /> {inList ? "Add more" : "Add"}
               </button>
             )}
           </div>

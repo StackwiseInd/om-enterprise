@@ -1126,3 +1126,168 @@ export const websiteOrderLines = pgTable("website_order_lines", {
   indicativeUnitPrice: money("indicative_unit_price"),
   priceIncludesTax: boolean("price_includes_tax"),
 });
+
+/* ------------------------------------------------------------------ */
+/* Online shop: customer accounts, coupons, paid pickup orders          */
+/* ------------------------------------------------------------------ */
+
+/** A website customer's sign-in (separate from staff users). Mobile is the username. */
+export const shopAccounts = pgTable(
+  "shop_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    mobile: text("mobile").notNull().unique(),
+    email: text("email"),
+    passwordHash: text("password_hash").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    failedLoginCount: integer("failed_login_count").notNull().default(0),
+    lockedUntil: ts("locked_until"),
+    lastLoginAt: ts("last_login_at"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+);
+
+export const shopSessions = pgTable(
+  "shop_sessions",
+  {
+    /** sha256 of the cookie token; the token itself is never stored. */
+    id: text("id").primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => shopAccounts.id, { onDelete: "cascade" }),
+    expiresAt: ts("expires_at").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("shop_sessions_account_idx").on(t.accountId)],
+);
+
+/** One generation run: N single-use codes, each worth a flat amount off. */
+export const couponBatches = pgTable(
+  "coupon_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    label: text("label").notNull(),
+    amountOff: money("amount_off").notNull(),
+    /** The cart must be worth at least this much (before the discount). */
+    minOrder: money("min_order").notNull().default("0"),
+    validUntil: ts("valid_until"),
+    codeCount: integer("code_count").notNull(),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [check("coupon_batches_amount", sql`${t.amountOff} > 0 and ${t.minOrder} >= 0`)],
+);
+
+export type CouponStatus = "active" | "reserved" | "used" | "disabled";
+
+export const coupons = pgTable(
+  "coupons",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull().unique(),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => couponBatches.id),
+    /** active → reserved (an order is waiting for payment) → used (payment verified); or disabled. */
+    status: text("status").$type<CouponStatus>().notNull().default("active"),
+    orderId: uuid("order_id"),
+    usedAt: ts("used_at"),
+    disabledAt: ts("disabled_at"),
+    disabledBy: uuid("disabled_by").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("coupons_batch_idx").on(t.batchId),
+    check("coupons_status", sql`${t.status} in ('active','reserved','used','disabled')`),
+    check("coupons_order_when_taken", sql`${t.status} not in ('reserved','used') or ${t.orderId} is not null`),
+  ],
+);
+
+export type OnlineOrderStatus =
+  | "awaiting_payment"
+  | "payment_submitted"
+  | "paid"
+  | "payment_failed"
+  | "ready"
+  | "collected"
+  | "cancelled"
+  | "expired";
+
+/** A paid-online, collect-at-the-store order placed by a signed-in customer. */
+export const onlineOrders = pgTable(
+  "online_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderNumber: text("order_number").notNull().unique(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => shopAccounts.id),
+    customerName: text("customer_name").notNull(),
+    mobile: text("mobile").notNull(),
+    status: text("status").$type<OnlineOrderStatus>().notNull().default("awaiting_payment"),
+    subtotal: money("subtotal").notNull(),
+    discount: money("discount").notNull().default("0"),
+    total: money("total").notNull(),
+    couponId: uuid("coupon_id").references(() => coupons.id),
+    couponCode: text("coupon_code"),
+    /** The UPI ID and exact request the QR encodes, as shown to the customer. */
+    upiVpa: text("upi_vpa").notNull(),
+    qrPayload: text("qr_payload").notNull(),
+    /** Pay (and send the UTR) before this time; afterwards the order expires and any coupon is freed. */
+    expiresAt: ts("expires_at").notNull(),
+    utr: text("utr"),
+    utrSubmittedAt: ts("utr_submitted_at"),
+    verifiedBy: uuid("verified_by").references(() => users.id),
+    verifiedAt: ts("verified_at"),
+    verificationNote: text("verification_note"),
+    failureReason: text("failure_reason"),
+    readyAt: ts("ready_at"),
+    collectedAt: ts("collected_at"),
+    cancelledAt: ts("cancelled_at"),
+    cancelReason: text("cancel_reason"),
+    handledBy: uuid("handled_by").references(() => users.id),
+    ipHash: text("ip_hash"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("online_orders_status_idx").on(t.status, t.createdAt),
+    index("online_orders_account_idx").on(t.accountId, t.createdAt),
+    check(
+      "online_orders_status",
+      sql`${t.status} in ('awaiting_payment','payment_submitted','paid','payment_failed','ready','collected','cancelled','expired')`,
+    ),
+    check("online_orders_amounts", sql`${t.discount} >= 0 and ${t.total} > 0 and ${t.total} = ${t.subtotal} - ${t.discount}`),
+    check("online_orders_paid_verified", sql`${t.status} not in ('paid','ready','collected') or (${t.verifiedAt} is not null and ${t.utr} is not null)`),
+    // One UTR can back only one live order.
+    uniqueIndex("online_orders_utr_uq")
+      .on(sql`upper(${t.utr})`)
+      .where(sql`${t.utr} is not null and ${t.status} in ('payment_submitted','paid','ready','collected')`),
+    // One coupon can sit on only one live order.
+    uniqueIndex("online_orders_coupon_uq")
+      .on(t.couponId)
+      .where(sql`${t.couponId} is not null and ${t.status} not in ('payment_failed','cancelled','expired')`),
+  ],
+);
+
+export const onlineOrderLines = pgTable(
+  "online_order_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => onlineOrders.id, { onDelete: "cascade" }),
+    variantId: uuid("variant_id")
+      .notNull()
+      .references(() => productVariants.id),
+    productName: text("product_name").notNull(),
+    variantName: text("variant_name"),
+    sku: text("sku").notNull(),
+    unit: text("unit").notNull(),
+    quantity: qty("quantity").notNull(),
+    unitPrice: money("unit_price").notNull(),
+    lineTotal: money("line_total").notNull(),
+  },
+  (t) => [index("online_order_lines_order_idx").on(t.orderId)],
+);

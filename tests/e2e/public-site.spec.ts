@@ -26,7 +26,7 @@ test.describe("public website", () => {
 
   test("a visitor sends an order request that staff can see", async ({ page, browser }) => {
     await page.goto("/products/sample-interior-emulsion");
-    await page.getByRole("button", { name: /Add to enquiry list|Add more to list/ }).click();
+    await page.getByRole("button", { name: /^(Add to cart|Add more to cart)$/ }).click();
     await page.goto("/enquiry");
     await expect(page.getByText("SAMPLE Interior Emulsion").first()).toBeVisible();
     await page.fill("#eq-name", "Ramesh E2E");

@@ -16,7 +16,7 @@ export default function ProductsPage({ searchParams }: PageProps<"/products">) {
       <PageIntro
         crumbs={[{ href: "/", label: "Home" }, { label: "Products" }]}
         title="Product catalogue"
-        description="Every size we list, with its SKU. Add items to your enquiry list — we confirm availability and the final bill amount when you contact us or visit the shop."
+        description="Every size we list, with its SKU. Add items to your cart and pay online by UPI, or send it as a request — we confirm availability and the final bill amount when you contact us or visit the shop."
       />
       <Container className="py-8 sm:py-10">
         <Suspense

@@ -489,6 +489,20 @@ Implemented in `src/server/payments/providers.ts` against Razorpay's documentati
 
 ---
 
+## Online orders, customer accounts and discount codes
+
+Website visitors can **pay online by UPI and collect from the store** (no delivery).
+
+- **Cart:** "Add to cart" on any product; the cart lives in the browser and is re-priced on the server every time it is shown.
+- **Customer accounts** (`/sign-up`, `/sign-in`, `/my-orders`): name, mobile number and password. Separate from staff accounts (own table and cookie). Eight wrong passwords lock the account for 15 minutes; sign-ups and sign-ins are rate-limited. There is no self-service reset yet: customers ask the shop.
+- **Checkout** (`/checkout`, signed in): every item must have an online price (no "price on request" or sample items) and the total must be under ₹1,00,000. A discount code is optional.
+- **Payment:** the order page shows a UPI QR for the **exact amount** (and the order number), payable for 60 minutes. After paying, the customer enters the **12-digit UTR**. The system refuses a malformed UTR, a UTR already given for another live order, a UTR already confirmed at the counter, and an order that has expired.
+- **Verification is done by a person.** As with counter payments, nothing can see money arrive in a plain UPI ID, so the order shows "Checking payment" until someone with *payments.verify* opens **Dashboard → Online orders**, finds the exact amount and UTR in the shop's bank/UPI app and clicks **Payment received** (or **Not found**, with a reason the customer sees). The customer's page updates by itself to "Payment verified. Your order is placed." or "Payment not found". For automatic confirmation, use a payment gateway (see Razorpay above).
+- **Pickup:** staff mark **Ready for pickup** and **Handed over**. Make the GST bill at the counter as usual and record the UPI payment there with the same UTR.
+- **Discount codes** (**Dashboard → Discount codes**, *discounts.configure*): generate up to 500 single-use codes per batch, each a flat ₹ amount off, with an optional minimum order (above the amount off) and end date. Codes look like `OM-7K3F-9QXD` (no look-alike characters) and can be typed in any case, with or without dashes. A code is **reserved** while its order waits for payment, **used** once the payment is verified, and freed again if the order is cancelled, expires or its payment isn't found. Download a batch as CSV, or disable unused codes.
+- **Everything is logged** in the audit log: sign-ups, failed sign-ins and lockouts, code generation and disabling, order placed (with amounts and code), UTR sent or refused, payment verified or not found, ready, collected, cancelled and expired. Each online order's page shows its own history.
+- Online payment is offered only when UPI QR is enabled in Settings → Payments.
+
 ## Owner app on the phone (/admin/app)
 
 Signing in at **/admin** opens the owner's phone app at **/admin/app** (anyone who sees the
@@ -677,7 +691,7 @@ npm run typecheck && npm run lint
 | `dashboard-ops.spec.ts` | Overview totals unchanged by training sales; sale → payment → document → PDF traceability |
 | `pos.spec.ts` | **The acceptance scenario:** sales staff over-discounts → server blocks finalising → admin approves remotely → customer agrees → UPI QR (not treated as paid) → 12-digit UTR + explicit confirmation → GST tax invoice `OE/yy-yy/n` → PDF; 403 on price/cost edits; UTR reuse rejected; scanner-style SKU + Enter |
 
-Last full run (5 Nov 2026, this repository): **202 unit (22 files), 144 integration (17 files) and 34 browser tests passed.** Four browser tests that create accounts run on the desktop profile only, so they show as skipped on the mobile profile.
+Last full run (6 Nov 2026, this repository): **203 unit (23 files), 153 integration (18 files) and 34 browser tests passed.** Four browser tests that create accounts run on the desktop profile only, so they show as skipped on the mobile profile.
 
 ### Recorded walkthrough (videos)
 

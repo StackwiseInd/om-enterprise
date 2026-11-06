@@ -1,4 +1,6 @@
 import {
+  ShoppingBag,
+  Ticket,
   BadgeCheck,
   Boxes,
   ChartColumn,
@@ -39,6 +41,8 @@ const ICONS: Record<string, LucideIcon> = {
   smartphone: Smartphone,
   settings: Settings,
   history: History,
+  "shopping-bag": ShoppingBag,
+  ticket: Ticket,
 };
 
 export function NavIcon({ name, className }: { name: string; className?: string }) {

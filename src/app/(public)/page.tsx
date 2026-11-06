@@ -289,7 +289,7 @@ async function FeaturedGrid() {
 /* ------------------------------------------------------------------ */
 
 const STEPS = [
-  { title: "Make a list", text: "Pick the exact size and quantity of each item and add it to your enquiry list as you browse.", href: "/products", cta: "Start browsing" },
+  { title: "Make a list", text: "Pick the exact size and quantity of each item and add it to your cart as you browse.", href: "/products", cta: "Start browsing" },
   { title: "Send it to the shop", text: "Send the list as an order request with your name and mobile number, or ask about any item on WhatsApp.", href: "/enquiry", cta: "Open your list" },
   { title: "We confirm", text: "We get back to you with availability and the final price. Pay and collect at the counter in Naswadi.", href: "/contact", cta: "How to reach us" },
 ];
