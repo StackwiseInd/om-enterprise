@@ -76,7 +76,14 @@
       "idx": 10,
       "version": "7",
       "when": 1793941468942,
-      "tag": "0010_phonepe_gateway",
+      "tag": "0010_online_gateway",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793986910142,
+      "tag": "0011_razorpay_checkout",
       "breakpoints": true
     }
   ]

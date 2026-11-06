@@ -1958,7 +1958,7 @@
         },
         "online_orders_method": {
           "name": "online_orders_method",
-          "value": "\"online_orders\".\"payment_method\" in ('upi_manual','phonepe')"
+          "value": "\"online_orders\".\"payment_method\" in ('upi_manual','razorpay')"
         },
         "online_orders_paid_verified": {
           "name": "online_orders_paid_verified",

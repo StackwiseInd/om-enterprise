@@ -26,19 +26,19 @@ export default function OrderPage({ params, searchParams }: PageProps<"/my-order
 
 async function Content({ params, searchParams }: { params: PageProps<"/my-orders/[number]">["params"]; searchParams: PageProps<"/my-orders/[number]">["searchParams"] }) {
   const { number } = await params;
-  // Back from PhonePe's page: ask PhonePe for the result straight away.
-  const fromGateway = (await searchParams).from === "phonepe";
+  // Straight from checkout (?pay=1): the payment window opens on arrival.
+  const autoPay = (await searchParams).pay === "1";
   const account = await getShopAccount();
   if (!account) redirect(`/sign-in?next=/my-orders/${encodeURIComponent(number)}`);
   if (!/^OL\d{6,}$/.test(number)) notFound();
-  const data = await getMyOrder(account, number, { fromGateway }).catch(() => null);
+  const data = await getMyOrder(account, number).catch(() => null);
   if (!data) notFound();
   const { business } = await getSiteData();
   return (
     <>
       <PageIntro crumbs={[{ href: "/", label: "Home" }, { href: "/my-orders", label: "My orders" }, { label: number }]} title={`Order ${number}`} />
       <Container className="py-8 sm:py-10">
-        <OrderPayment initial={data} shop={{ name: business.name, address: addressLines(business), mapUrl: mapsHref(business), phone: business.phone || null, whatsapp: business.whatsapp || null }} />
+        <OrderPayment initial={data} autoPay={autoPay} shop={{ name: business.name, address: addressLines(business), mapUrl: mapsHref(business), phone: business.phone || null, whatsapp: business.whatsapp || null }} />
       </Container>
     </>
   );

@@ -1,3 +1,4 @@
+import { handleRazorpayOrderEvent } from "@/server/services/online-payments";
 import "server-only";
 import { alias } from "drizzle-orm/pg-core";
 import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
@@ -428,7 +429,11 @@ export async function handleGatewayWebhook(
   } catch {
     return { outcome: "ignored", status: 400 };
   }
-  return processPaymentEvent(provider, event, JSON.parse(rawBody));
+  // Website orders (Razorpay checkout): order.paid, payment.*, refund.* about one of those orders just make the
+  // server ask Razorpay. Anything else (the counter's QR payments) carries on below.
+  const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+  if ((await handleRazorpayOrderEvent(rawBody, parsed)).matched) return { outcome: "processed", status: 200 };
+  return processPaymentEvent(provider, event, parsed);
 }
 
 export async function processPaymentEvent(provider: string, event: NormalizedPaymentEvent, payload: unknown) {

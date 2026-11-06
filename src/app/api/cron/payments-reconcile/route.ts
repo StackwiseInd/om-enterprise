@@ -3,8 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { reconcileOpenOrders } from "@/server/services/online-payments";
 
 /**
- * Safety net for PhonePe: re-check every order still waiting on PhonePe (and refunds in progress).
- * Pages and webhooks already do this as it happens; the scheduler (vercel.json) runs it once a day
+ * Safety net for online payments: re-check every Razorpay order still waiting on an answer (and refunds in
+ * progress). Pages and webhooks already do this as it happens; the scheduler (vercel.json) runs it once a day
  * on the Hobby plan, and can run it every few minutes on Pro. Needs `Authorization: Bearer <CRON_SECRET>`.
  */
 export async function GET(req: NextRequest) {
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     await reconcileOpenOrders(100);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("PhonePe reconcile failed:", err);
+    console.error("Payment reconcile failed:", err);
     return NextResponse.json({ ok: false }, { status: 500 });
   }
 }

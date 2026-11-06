@@ -1233,21 +1233,20 @@ export const onlineOrders = pgTable(
     total: money("total").notNull(),
     couponId: uuid("coupon_id").references(() => coupons.id),
     couponCode: text("coupon_code"),
-    /** "phonepe": paid on PhonePe's checkout, confirmed by its Order Status API. "upi_manual": QR + UTR, checked by staff. */
-    paymentMethod: text("payment_method").$type<"upi_manual" | "phonepe">().notNull().default("upi_manual"),
+    /** "razorpay": paid in Razorpay's checkout, confirmed by its API. "upi_manual": QR + UTR, checked by staff. */
+    paymentMethod: text("payment_method").$type<"upi_manual" | "razorpay">().notNull().default("upi_manual"),
     /** The UPI ID and exact request the QR encodes (manual UPI orders only). */
     upiVpa: text("upi_vpa"),
     qrPayload: text("qr_payload"),
-    /** PhonePe: our merchantOrderId for the current attempt (order number + attempt), their order id and checkout URL. */
+    /** Razorpay: our receipt (order number + try), Razorpay's order id, and when the current try's payment time runs out. */
     gatewayMerchantOrderId: text("gateway_merchant_order_id").unique(),
     gatewayAttempt: integer("gateway_attempt").notNull().default(0),
     gatewayOrderId: text("gateway_order_id"),
-    gatewayRedirectUrl: text("gateway_redirect_url"),
     gatewayExpiresAt: ts("gateway_expires_at"),
     gatewayState: text("gateway_state"),
     gatewayTransactionId: text("gateway_transaction_id"),
     gatewayPaymentMode: text("gateway_payment_mode"),
-    /** The bank reference PhonePe reports for a UPI payment (shown to staff; not the customer-typed `utr`). */
+    /** The bank reference Razorpay reports for a UPI payment (shown to staff; not the customer-typed `utr`). */
     gatewayUtr: text("gateway_utr"),
     gatewayCheckedAt: ts("gateway_checked_at"),
     refundMerchantId: text("refund_merchant_id").unique(),
@@ -1282,7 +1281,7 @@ export const onlineOrders = pgTable(
       sql`${t.status} in ('awaiting_payment','payment_submitted','paid','payment_failed','ready','collected','cancelled','expired','refunding','refunded')`,
     ),
     check("online_orders_amounts", sql`${t.discount} >= 0 and ${t.total} > 0 and ${t.total} = ${t.subtotal} - ${t.discount}`),
-    check("online_orders_method", sql`${t.paymentMethod} in ('upi_manual','phonepe')`),
+    check("online_orders_method", sql`${t.paymentMethod} in ('upi_manual','razorpay')`),
     check(
       "online_orders_paid_verified",
       sql`${t.status} not in ('paid','ready','collected') or (${t.verifiedAt} is not null and (${t.utr} is not null or ${t.gatewayTransactionId} is not null))`,

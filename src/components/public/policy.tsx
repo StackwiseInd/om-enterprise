@@ -125,6 +125,34 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** The company that processes online payments for the shop. */
+export const PAYMENT_PARTNER = "Razorpay Software Private Limited (“Razorpay”)";
+
+/**
+ * Grievance redressal, as the Consumer Protection (E-Commerce) Rules, 2020 and the Digital Personal Data
+ * Protection Act, 2023 expect: a named point of contact, an acknowledgement time and a resolution time.
+ */
+export function grievanceSection(b: Business): PolicySection {
+  return {
+    id: "grievance",
+    title: "Grievance Officer",
+    body: (
+      <>
+        <p>
+          If you have a complaint about an order, a payment, a product, this website or how your personal details are handled, please write to our Grievance Officer: the proprietor of {b.name}. To reach them, {contactLine(b)}, giving your name, mobile number, order number (if any) and what went wrong.
+        </p>
+        <Bullets
+          items={[
+            "We acknowledge every complaint within 48 hours.",
+            "We aim to resolve it within one month of receiving it, and tell you the outcome.",
+            "If you are not satisfied, you can approach the consumer commission, call the National Consumer Helpline on 1915, or file a complaint at consumerhelpline.gov.in. For personal data, you can also complain to the Data Protection Board of India once we have had a chance to reply.",
+          ]}
+        />
+      </>
+    ),
+  };
+}
+
 /** "call 98250 12345, WhatsApp … or email …", from whatever the shop has filled in. */
 export function contactLine(b: Business) {
   const ways = [b.phone && `call ${formatPhone(b.phone)}`, b.whatsapp && `WhatsApp ${formatPhone(b.whatsapp)}`, b.email && `email ${b.email}`].filter(Boolean) as string[];

@@ -24,7 +24,7 @@ ALTER TABLE "online_orders" ADD COLUMN "refunded_at" timestamp with time zone;--
 CREATE UNIQUE INDEX "online_orders_coupon_uq" ON "online_orders" USING btree ("coupon_id") WHERE "online_orders"."coupon_id" is not null and "online_orders"."status" not in ('payment_failed','cancelled','expired','refunding','refunded');--> statement-breakpoint
 ALTER TABLE "online_orders" ADD CONSTRAINT "online_orders_gateway_merchant_order_id_unique" UNIQUE("gateway_merchant_order_id");--> statement-breakpoint
 ALTER TABLE "online_orders" ADD CONSTRAINT "online_orders_refund_merchant_id_unique" UNIQUE("refund_merchant_id");--> statement-breakpoint
-ALTER TABLE "online_orders" ADD CONSTRAINT "online_orders_method" CHECK ("online_orders"."payment_method" in ('upi_manual','phonepe'));--> statement-breakpoint
+ALTER TABLE "online_orders" ADD CONSTRAINT "online_orders_method" CHECK ("online_orders"."payment_method" in ('upi_manual','razorpay'));--> statement-breakpoint
 ALTER TABLE "online_orders" ADD CONSTRAINT "online_orders_manual_qr" CHECK ("online_orders"."payment_method" <> 'upi_manual' or ("online_orders"."upi_vpa" is not null and "online_orders"."qr_payload" is not null));--> statement-breakpoint
 ALTER TABLE "online_orders" ADD CONSTRAINT "online_orders_status" CHECK ("online_orders"."status" in ('awaiting_payment','payment_submitted','paid','payment_failed','ready','collected','cancelled','expired','refunding','refunded'));--> statement-breakpoint
 ALTER TABLE "online_orders" ADD CONSTRAINT "online_orders_paid_verified" CHECK ("online_orders"."status" not in ('paid','ready','collected') or ("online_orders"."verified_at" is not null and ("online_orders"."utr" is not null or "online_orders"."gateway_transaction_id" is not null)));

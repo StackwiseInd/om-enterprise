@@ -1,3 +1,4 @@
+import { gatewayName, isGatewayMethod } from "@/lib/gateway";
 import { Suspense } from "react";
 import Link from "next/link";
 import { requirePageActor } from "@/server/auth/session";
@@ -33,7 +34,7 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
       <PageHeader
         eyebrow="Sales"
         title="Online orders"
-        description="Paid online, collected at the store. PhonePe payments are confirmed by PhonePe itself; UPI QR payments count only after someone checks the credit in the shop's bank or UPI app."
+        description="Paid online, collected at the store. Razorpay payments are confirmed by Razorpay itself; UPI QR payments count only after someone checks the credit in the shop's bank or UPI app."
       />
       <FilterBar
         fields={[
@@ -101,7 +102,7 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
                     {o.couponCode && <div className="font-sans text-xs text-emerald-700">− {o.discount} ({o.couponCode})</div>}
                   </td>
                   <td data-label="Paid via" className={tdText}>
-                    <div>{o.paymentMethod === "phonepe" ? "PhonePe" : "UPI QR"}</div>
+                    <div>{isGatewayMethod(o.paymentMethod) ? gatewayName(o.paymentMethod) : "UPI QR"}</div>
                     {(o.utr || o.gatewayUtr || o.gatewayPaymentMode) && <div className="tabular text-xs text-navy-500">{o.gatewayPaymentMode ?? ""}{o.utr || o.gatewayUtr ? ` UTR ${o.utr ?? o.gatewayUtr}` : ""}</div>}
                   </td>
                   <td data-label="Status" className={tdText}>

@@ -4,6 +4,6 @@
   "buildCommand": "npm run vercel-build",
   "crons": [
     { "path": "/api/cron/daily-summary", "schedule": "0 15 * * *" },
-    { "path": "/api/cron/phonepe-reconcile", "schedule": "45 0 * * *" }
+    { "path": "/api/cron/payments-reconcile", "schedule": "45 0 * * *" }
   ]
 }

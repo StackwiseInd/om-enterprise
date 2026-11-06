@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { MessageCircle, Phone } from "lucide-react";
 import { requirePageActor } from "@/server/auth/session";
+import { gatewayName, isGatewayMethod } from "@/lib/gateway";
 import { can } from "@/server/auth/actor";
 import { getOnlineOrder } from "@/server/services/online-orders";
 import { whatsappLink } from "@/lib/india";
@@ -64,7 +65,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="min-w-0 space-y-6 xl:col-span-2">
           <Card>
-            <CardHeader title="Payment" description={o.paymentMethod === "phonepe" ? "PhonePe Payment Gateway: confirmed by PhonePe's Order Status API" : `UPI QR to ${o.upiVpa}, exact amount in the QR; checked by staff`} />
+            <CardHeader title="Payment" description={isGatewayMethod(o.paymentMethod) ? `${gatewayName(o.paymentMethod)}: confirmed by ${gatewayName(o.paymentMethod)}'s own status API` : `UPI QR to ${o.upiVpa}, exact amount in the QR; checked by staff`} />
             <CardBody className="grid gap-6 md:grid-cols-2">
               <dl>
                 <Row label="Items">{<Money value={o.subtotal} />}</Row>
@@ -72,10 +73,10 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                 <Row label="To pay">
                   <Money value={o.total} className="text-base font-semibold" />
                 </Row>
-                {o.paymentMethod === "phonepe" ? (
+                {isGatewayMethod(o.paymentMethod) ? (
                   <>
-                    <Row label="PhonePe order">{o.gatewayMerchantOrderId ? <span className="tabular">{o.gatewayMerchantOrderId}{o.gatewayOrderId ? ` · ${o.gatewayOrderId}` : ""}</span> : "—"}</Row>
-                    <Row label="PhonePe status">{o.gatewayState ?? "—"}{o.gatewayCheckedAt ? <span className="text-navy-500"> · checked <DateTime value={o.gatewayCheckedAt} /></span> : null}</Row>
+                    <Row label={`${gatewayName(o.paymentMethod)} id`}>{o.gatewayMerchantOrderId ? <span className="tabular">{o.gatewayMerchantOrderId}{o.gatewayOrderId ? ` · ${o.gatewayOrderId}` : ""}</span> : "—"}</Row>
+                    <Row label={`${gatewayName(o.paymentMethod)} status`}>{o.gatewayState ?? "—"}{o.gatewayCheckedAt ? <span className="text-navy-500"> · checked <DateTime value={o.gatewayCheckedAt} /></span> : null}</Row>
                     {o.gatewayTransactionId && <Row label="Transaction">{<span className="tabular">{o.gatewayTransactionId}</span>}{o.gatewayPaymentMode ? ` · ${o.gatewayPaymentMode}` : ""}</Row>}
                     {o.gatewayUtr && <Row label="UTR">{<span className="tabular font-semibold">{o.gatewayUtr}</span>}</Row>}
                     {o.refundMerchantId && (
@@ -93,11 +94,11 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                 )}
                 {o.verifiedAt && (
                   <Row label="Verified">
-                    <DateTime value={o.verifiedAt} /> by {verifiedByName ?? (o.paymentMethod === "phonepe" ? "PhonePe" : "—")}
+                    <DateTime value={o.verifiedAt} /> by {verifiedByName ?? (isGatewayMethod(o.paymentMethod) ? gatewayName(o.paymentMethod) : "—")}
                   </Row>
                 )}
                 {o.verificationNote && <Row label="Note">{o.verificationNote}</Row>}
-                {o.failureReason && <Row label={o.paymentMethod === "phonepe" ? "Failed" : "Not found"}>{o.failureReason}</Row>}
+                {o.failureReason && <Row label={isGatewayMethod(o.paymentMethod) ? "Failed" : "Not found"}>{o.failureReason}</Row>}
                 {o.cancelReason && <Row label="Cancelled">{o.cancelReason}</Row>}
               </dl>
               <OnlineOrderActions
@@ -108,14 +109,15 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                 orderNumber={o.orderNumber}
                 canVerify={can(actor, "payments.verify")}
                 canManage={can(actor, "orders.manage")}
-                gateway={o.paymentMethod === "phonepe"}
+                gateway={isGatewayMethod(o.paymentMethod)}
+                gatewayLabel={gatewayName(o.paymentMethod)}
                 canRefund={can(actor, "payments.refund")}
                 refundState={o.refundState}
               />
             </CardBody>
           </Card>
           <Card>
-            <CardHeader title="Items" description={o.paymentMethod === "phonepe" ? "Make the GST bill at the counter when the customer collects; record the payment as received online by PhonePe with this transaction ID." : "Make the GST bill at the counter when the customer collects; record the UPI payment there with this UTR."} />
+            <CardHeader title="Items" description={isGatewayMethod(o.paymentMethod) ? `Make the GST bill at the counter when the customer collects; record the payment as received online by ${gatewayName(o.paymentMethod)} with this payment ID.` : "Make the GST bill at the counter when the customer collects; record the UPI payment there with this UTR."} />
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px]">
                 <thead>

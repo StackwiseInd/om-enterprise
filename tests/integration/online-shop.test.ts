@@ -127,7 +127,7 @@ describe("online order: ₹1,000 cart, ₹100 code, UPI, UTR, shop verifies", ()
     expect((await rejects(submitUtr(a, orderNumber, utr(), client))).code).toBe("CONFLICT");
 
     // Counter staff with payments.verify confirm the credit in the bank app.
-    await verifyOnlinePayment(sachin, (await idOf(orderNumber)), { note: "Seen in PhonePe Business" });
+    await verifyOnlinePayment(sachin, (await idOf(orderNumber)), { note: "Seen in the bank app" });
     expect((await getMyOrder(a, orderNumber)).order).toMatchObject({ status: "paid", utr: ref });
     const [c] = await getDb().select().from(coupons).where(eq(coupons.code, code));
     expect(c.status).toBe("used");

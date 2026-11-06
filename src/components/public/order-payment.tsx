@@ -1,13 +1,15 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, CheckCircle2, Clock3, MessageCircle, Phone, Smartphone, Store, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
 import { cn } from "@/components/ui/cn";
+import { gatewayName, isGatewayMethod, paymentModeLabel, type PaymentMethod } from "@/lib/gateway";
 import { apiFetch, errorMessage } from "@/lib/api-client";
+import { payOrder } from "./razorpay-checkout";
 import { formatPhone, whatsappLink } from "@/lib/india";
 import { formatPrice } from "@/lib/money";
 import type { OnlineOrderStatus } from "@/server/db/schema";
@@ -20,7 +22,7 @@ interface OrderData {
     discount: string;
     total: string;
     couponCode: string | null;
-    paymentMethod: "upi_manual" | "phonepe";
+    paymentMethod: PaymentMethod;
     upiVpa: string | null;
     qrPayload: string | null;
     canPayNow: boolean;
@@ -62,16 +64,20 @@ function useCountdown(until: string, active: boolean) {
   return { left, label: `${mm}:${String(ss).padStart(2, "0")}` };
 }
 
-export function OrderPayment({ initial, shop }: { initial: OrderData; shop: Shop }) {
+export function OrderPayment({ initial, shop, autoPay = false }: { initial: OrderData; shop: Shop; autoPay?: boolean }) {
   const router = useRouter();
   const [data, setData] = useState(initial);
   const o = data.order;
+  const refresh = () => {
+    apiFetch<OrderData>(`/api/shop/orders/${o.orderNumber}`).then(setData).catch(() => {});
+  };
 
   // Keep the page current while the shop checks the payment (and to notice when time runs out).
-  const gateway = o.paymentMethod === "phonepe";
+  const gateway = isGatewayMethod(o.paymentMethod);
+  const gw = gatewayName(o.paymentMethod);
   useEffect(() => {
     if (o.status !== "payment_submitted" && o.status !== "awaiting_payment" && o.status !== "refunding") return;
-    // PhonePe: the server asks PhonePe on its required schedule; these polls just pick up the answer.
+    // Gateway: the server asks the gateway on its check schedule; these polls just pick up the answer.
     const every = o.status === "refunding" ? 15000 : gateway ? 4000 : o.status === "payment_submitted" ? 8000 : 30000;
     const t = setInterval(() => {
       if (document.visibilityState !== "visible") return;
@@ -80,11 +86,11 @@ export function OrderPayment({ initial, shop }: { initial: OrderData; shop: Shop
     return () => clearInterval(t);
   }, [o.status, o.orderNumber, gateway]);
 
-  const steps = gateway ? ["Pay on PhonePe", "Payment confirmed", "Collect"] : ["Pay by UPI", "Send UTR", "Shop confirms", "Collect"];
+  const steps = gateway ? [`Pay on ${gw}`, "Payment confirmed", "Collect"] : ["Pay by UPI", "Send UTR", "Shop confirms", "Collect"];
   const step = gateway
     ? o.status === "awaiting_payment" || o.status === "payment_submitted" ? 0 : ["paid", "ready"].includes(o.status) ? 1 : o.status === "collected" ? 2 : -1
     : o.status === "awaiting_payment" ? 0 : o.status === "payment_submitted" ? 1 : ["paid", "ready"].includes(o.status) ? 2 : o.status === "collected" ? 3 : -1;
-  const paidVia = gateway ? `on PhonePe${o.gatewayPaymentMode ? ` (${modeLabel(o.gatewayPaymentMode)})` : ""}` : `by UPI (UTR ${o.utr})`;
+  const paidVia = gateway ? `on ${gw}${o.gatewayPaymentMode ? ` (${paymentModeLabel(o.gatewayPaymentMode)})` : ""}` : `by UPI (UTR ${o.utr})`;
   const wa = shop.whatsapp ? whatsappLink(shop.whatsapp, `Hello ${shop.name}, about my online order ${o.orderNumber}${o.utr ? ` (UTR ${o.utr})` : ""}.`) : null;
 
   return (
@@ -104,10 +110,10 @@ export function OrderPayment({ initial, shop }: { initial: OrderData; shop: Shop
         )}
         <div className="p-5 sm:p-7">
           {o.status === "awaiting_payment" && !gateway && <PayNow data={data} onSubmitted={setData} onCancelled={() => router.refresh()} />}
-          {o.status === "awaiting_payment" && gateway && <GatewayPay data={data} onCancelled={() => router.refresh()} />}
+          {o.status === "awaiting_payment" && gateway && <GatewayPay data={data} autoPay={autoPay} onCancelled={() => router.refresh()} onChanged={refresh} />}
           {o.status === "payment_submitted" && gateway && (
             <StatusBlock icon={<Clock3 className="h-6 w-6 text-amber-600" />} title="We're checking your payment">
-              <p>PhonePe reported a payment that we need to check by hand. The shop will confirm it shortly; this page updates by itself.</p>
+              <p>{gw} reported a payment that we need to check by hand. The shop will confirm it shortly; this page updates by itself.</p>
             </StatusBlock>
           )}
           {o.status === "payment_submitted" && !gateway && (
@@ -136,8 +142,8 @@ export function OrderPayment({ initial, shop }: { initial: OrderData; shop: Shop
           {o.status === "payment_failed" && gateway && (
             <StatusBlock icon={<XCircle className="h-7 w-7 text-red-600" />} title="The payment didn't go through">
               {o.failureReason && <p className="font-medium text-navy-900">{o.failureReason}</p>}
-              <p className="mt-2">No money was taken for this attempt. You can try again; if money did leave your account, PhonePe returns it, or contact the shop.</p>
-              <RetryPay orderNumber={o.orderNumber} total={o.total} />
+              <p className="mt-2">No money was taken for this attempt. You can try again; if money did leave your account, {gw} returns it, or contact the shop.</p>
+              <RetryPay orderNumber={o.orderNumber} total={o.total} onChanged={refresh} />
             </StatusBlock>
           )}
           {(o.status === "refunding" || o.status === "refunded") && (
@@ -145,7 +151,7 @@ export function OrderPayment({ initial, shop }: { initial: OrderData; shop: Shop
               <p>
                 {o.status === "refunded"
                   ? `${formatPrice(o.total)} has been refunded to the account you paid from${o.refundedAt ? ` on ${time(o.refundedAt)}` : ""}. Banks can take a few working days to show it.`
-                  : `This order was cancelled and ${formatPrice(o.total)} is being refunded through PhonePe to the account you paid from.`}
+                  : `This order was cancelled and ${formatPrice(o.total)} is being refunded through ${gw} to the account you paid from.`}
               </p>
               {o.cancelReason && <p className="mt-2 text-sm text-navy-500">Reason: {o.cancelReason}</p>}
             </StatusBlock>
@@ -246,48 +252,53 @@ function Pickup({ shop, orderNumber }: { shop: Shop; orderNumber: string }) {
   );
 }
 
-const MODES: Record<string, string> = { UPI_INTENT: "UPI", UPI_COLLECT: "UPI", UPI_QR: "UPI QR", CARD: "card", NET_BANKING: "net banking" };
-function modeLabel(m: string) {
-  return MODES[m] ?? m.toLowerCase().replace(/_/g, " ");
-}
-
-async function goToPhonePe(orderNumber: string) {
-  const { payUrl } = await apiFetch<{ payUrl: string }>(`/api/shop/orders/${orderNumber}/pay`, { body: {} });
-  window.location.assign(payUrl);
-}
-
-function RetryPay({ orderNumber, total }: { orderNumber: string; total: string }) {
+/** Open Razorpay's payment window for this order and report what came of it. */
+function usePay(orderNumber: string, onChanged: () => void) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const pay = async () => {
+    setBusy(true);
+    setMessage(null);
+    const r = await payOrder(orderNumber);
+    setBusy(false);
+    if (r.kind === "failed") setMessage(r.message);
+    else if (r.kind === "dismissed") setMessage(r.lastFailure ? `The payment didn't go through: ${r.lastFailure.replace(/[.\s]*$/, "")}. You can try again.` : "The payment window was closed. You can pay any time from this page.");
+    onChanged();
+  };
+  return { busy, message, pay };
+}
+
+function RetryPay({ orderNumber, total, onChanged }: { orderNumber: string; total: string; onChanged: () => void }) {
+  const { busy, message, pay } = usePay(orderNumber, onChanged);
   return (
     <div className="mt-5">
-      <Button
-        loading={busy}
-        className="h-12 w-full text-[15px] sm:w-auto"
-        onClick={async () => {
-          setBusy(true);
-          setError(null);
-          try {
-            await goToPhonePe(orderNumber);
-          } catch (err) {
-            setError(errorMessage(err));
-            setBusy(false);
-          }
-        }}
-      >
+      <Button loading={busy} className="h-12 w-full text-[15px] sm:w-auto" onClick={pay}>
         Try again: pay {formatPrice(total)}
       </Button>
-      {error && <p className="mt-2 text-[13px] text-red-700">{error}</p>}
+      {message && <p className="mt-2 text-[13px] text-red-700">{message}</p>}
     </div>
   );
 }
 
-/** PhonePe order waiting for payment: open PhonePe's page, or wait while PhonePe confirms. */
-function GatewayPay({ data, onCancelled }: { data: OrderData; onCancelled: () => void }) {
+/** Gateway order waiting for payment: open Razorpay's payment window, or wait while it confirms. */
+function GatewayPay({ data, onCancelled, onChanged, autoPay }: { data: OrderData; onCancelled: () => void; onChanged: () => void; autoPay: boolean }) {
   const o = data.order;
-  const [busy, setBusy] = useState(false);
+  const gw = gatewayName(o.paymentMethod);
+  const { busy, message, pay } = usePay(o.orderNumber, onChanged);
   const [error, setError] = useState<string | null>(null);
   const confirming = o.gatewayState === "PENDING" && !!o.gatewayPaymentMode;
+
+  // Straight from checkout: open the payment window once, without leaving a ?pay=1 behind to reopen it on refresh.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!autoPay || !o.canPayNow || opened.current) return;
+    opened.current = true;
+    window.history.replaceState(null, "", window.location.pathname);
+    const t = setTimeout(() => void pay(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once, on arrival
+  }, []);
+
   const cancel = async () => {
     if (!confirm("Cancel this order? Only do this if you haven't paid.")) return;
     try {
@@ -303,33 +314,20 @@ function GatewayPay({ data, onCancelled }: { data: OrderData; onCancelled: () =>
       <h2 className="headline text-[1.375rem] font-bold text-navy-950 sm:text-[1.5rem]">{confirming ? "Confirming your payment" : `Pay ${formatPrice(o.total)}`}</h2>
       <p className="mt-2 text-[15px] leading-relaxed text-navy-600">
         {confirming
-          ? "PhonePe is confirming your payment. This page updates by itself in a few seconds; please don't pay again."
-          : "You pay on PhonePe's secure page with any UPI app, a debit or credit card, or net banking. If you've just paid, this page updates by itself in a few seconds."}
+          ? `${gw} is confirming your payment. This page updates by itself in a few seconds; please don't pay again.`
+          : `You pay in ${gw}'s secure window with any UPI app, a debit or credit card, net banking or a wallet. If you've just paid, this page updates by itself in a few seconds.`}
       </p>
       {!confirming && o.canPayNow && (
-        <Button
-          loading={busy}
-          className="mt-5 h-12 w-full text-[15px] sm:w-auto"
-          onClick={async () => {
-            setBusy(true);
-            setError(null);
-            try {
-              await goToPhonePe(o.orderNumber);
-            } catch (err) {
-              setError(errorMessage(err));
-              setBusy(false);
-            }
-          }}
-        >
-          Pay {formatPrice(o.total)} on PhonePe
+        <Button loading={busy} className="mt-5 h-12 w-full text-[15px] sm:w-auto" onClick={pay}>
+          Pay {formatPrice(o.total)} securely
         </Button>
       )}
       <div className="mt-4 flex items-center gap-2 text-sm text-navy-500">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Waiting for PhonePe
+        <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Waiting for {gw}
       </div>
-      {error && <p className="mt-3 text-[13px] text-red-700">{error}</p>}
+      {(message || error) && <p className="mt-3 text-[13px] text-red-700">{message ?? error}</p>}
       <Alert tone="info" className="mt-5">
-        Your order is placed as soon as PhonePe confirms the payment. Items are collected from the store only.
+        Your order is placed as soon as {gw} confirms the payment. Items are collected from the store only.
       </Alert>
       {!confirming && (
         <button type="button" onClick={cancel} className="mt-4 text-[13px] font-medium text-navy-500 underline-offset-4 hover:text-navy-900 hover:underline">
@@ -379,7 +377,7 @@ function PayNow({ data, onSubmitted, onCancelled }: { data: OrderData; onSubmitt
         <span className={cn("tabular text-sm", left < 5 * 60_000 ? "font-semibold text-red-700" : "text-navy-500")}>{left > 0 ? `Pay within ${label}` : "Time to pay has run out"}</span>
       </div>
       <p className="mt-1 text-sm text-navy-500">
-        Scan with any UPI app (GPay, PhonePe, Paytm, BHIM). It pays <span className="tabular text-navy-800">{o.upiVpa ?? ""}</span> exactly {formatPrice(o.total)}; please don&apos;t change the amount.
+        Scan with any UPI app. It pays <span className="tabular text-navy-800">{o.upiVpa ?? ""}</span> exactly {formatPrice(o.total)}; please don&apos;t change the amount.
       </p>
       <div className="mt-5 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
         {/* eslint-disable-next-line @next/next/no-img-element -- SVG generated for this order */}

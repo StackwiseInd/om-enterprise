@@ -14,7 +14,7 @@ const sections = (b: Business) => [
     title: "Collect from the shop",
     body: (
       <>
-        <p>Orders paid on this website are collected from the shop. We don&apos;t ship online orders by courier.</p>
+        <p>Orders paid on this website are collected from the shop. We don&apos;t ship online orders by courier or post, so there are no shipping charges on online orders.</p>
         <p className="rounded-lg bg-navy-50 px-4 py-3 text-navy-800">
           <strong>{b.name}</strong>
           <br />
@@ -35,7 +35,7 @@ const sections = (b: Business) => [
     body: (
       <Bullets
         items={[
-          "Once PhonePe confirms your payment, the order page shows “Order placed” and we start keeping the items ready.",
+          "Once Razorpay confirms your payment, the order page shows “Order placed” and we start keeping the items ready.",
           "Items in stock are usually ready the same working day, during shop hours. When the order is packed, the page shows “Ready for pickup”.",
           "If an item has to be ordered in, we call you with the expected date before you travel.",
           "Please collect within 7 days of the order being ready. If you need longer, tell us and we'll keep it aside.",
@@ -50,18 +50,23 @@ const sections = (b: Business) => [
       <Bullets
         items={[
           "Your order number (it starts with OL), on your phone or written down.",
-          "The mobile number used on the order. Someone else can collect for you if they have both.",
+          "The mobile number used on the order. Someone else can collect for you if they have both, and we may ask them for identification.",
           "Check the items at the counter. We replace anything damaged or wrong on the spot, and give you the GST bill.",
         ]}
       />
     ),
   },
   {
+    id: "ownership",
+    title: "Ownership and risk",
+    body: <p>The items stay ours, and at our risk, until you collect them. From the moment you collect them they are yours, and so is the responsibility for loading and carrying them safely. Heavy goods (pipes, tanks, bags) should be loaded with care; ask our staff for help.</p>,
+  },
+  {
     id: "delivery",
     title: "Delivery of larger orders",
     body: (
       <p>
-        For large or heavy orders (pipes, tanks, cement and the like), local delivery may be possible. It is arranged by phone, and the delivery charge is agreed with you before dispatch; it is not part of the online payment. To ask, {contactLine(b)}, or send your cart as a request from the cart page.
+        For large or heavy orders (pipes, tanks, cement and the like), local delivery may be possible. It is arranged by phone, and the delivery charge, timing and unloading are agreed with you before dispatch; it is not part of the online payment. To ask, {contactLine(b)}, or send your cart as a request from the cart page.
       </p>
     ),
   },

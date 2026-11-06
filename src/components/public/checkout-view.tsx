@@ -6,6 +6,7 @@ import { Store, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
+import { gatewayName, isGatewayMethod, type PaymentMethod } from "@/lib/gateway";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatPhone } from "@/lib/india";
 import { formatPrice } from "@/lib/money";
@@ -19,7 +20,7 @@ interface Preview {
   total: string;
 }
 
-export function CheckoutView({ account, pickup, shopName, mode }: { account: { name: string; mobile: string }; pickup: string; shopName: string; mode: "phonepe" | "upi_manual" | null }) {
+export function CheckoutView({ account, pickup, shopName, mode }: { account: { name: string; mobile: string }; pickup: string; shopName: string; mode: PaymentMethod | null }) {
   const onlinePay = mode !== null;
   const router = useRouter();
   const cart = useEnquiryList();
@@ -75,11 +76,10 @@ export function CheckoutView({ account, pickup, shopName, mode }: { account: { n
     setBusy("place");
     setError(null);
     try {
-      const { orderNumber, payUrl } = await apiFetch<{ orderNumber: string; payUrl: string | null }>("/api/shop/orders", { body: { items, couponCode: applied } });
+      const { orderNumber } = await apiFetch<{ orderNumber: string }>("/api/shop/orders", { body: { items, couponCode: applied } });
       cart.clear();
-      // PhonePe: straight to its payment page; it brings the customer back to the order page.
-      if (payUrl) window.location.assign(payUrl);
-      else router.push(`/my-orders/${orderNumber}`);
+      // Razorpay: the order page opens its payment window on arrival; the UPI QR order page just shows the QR.
+      router.push(`/my-orders/${orderNumber}${isGatewayMethod(mode) ? "?pay=1" : ""}`);
     } catch (err) {
       setError(errorMessage(err));
       setBusy(null);
@@ -160,8 +160,8 @@ export function CheckoutView({ account, pickup, shopName, mode }: { account: { n
             Place order and pay {preview ? formatPrice(preview.total) : ""}
           </Button>
           <p className="text-xs leading-relaxed text-navy-500">
-            {mode === "phonepe"
-              ? "You'll pay on PhonePe's secure page by UPI, card or net banking. As soon as PhonePe confirms the payment, your order is placed."
+            {isGatewayMethod(mode)
+              ? `You'll pay in ${gatewayName(mode)}'s secure window by UPI, card, net banking or wallet. As soon as ${gatewayName(mode)} confirms the payment, your order is placed.`
               : "Next you'll see a UPI QR for this exact amount. After paying, enter the UPI transaction ID (UTR). We confirm the payment against our bank account, then your order is placed."}
           </p>
           <p className="text-xs leading-relaxed text-navy-500">
@@ -177,7 +177,7 @@ export function CheckoutView({ account, pickup, shopName, mode }: { account: { n
 }
 
 /**
- * The cart is emptied when an order is placed, so a customer who comes back from PhonePe's page with
+ * The cart is emptied when an order is placed, so a customer who comes back from the payment page with
  * the Back button lands here. Show any order still waiting for payment, with a way to finish it.
  */
 function WaitingOrders() {

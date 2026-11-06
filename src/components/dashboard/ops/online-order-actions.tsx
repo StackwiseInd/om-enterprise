@@ -21,6 +21,7 @@ export function OnlineOrderActions({
   canVerify,
   canManage,
   gateway = false,
+  gatewayLabel = "the payment gateway",
   canRefund = false,
   refundState = null,
 }: {
@@ -31,8 +32,10 @@ export function OnlineOrderActions({
   orderNumber: string;
   canVerify: boolean;
   canManage: boolean;
-  /** Paid through PhonePe (confirmed automatically; refunds go back through PhonePe). */
+  /** Paid through a payment gateway (confirmed automatically; refunds go back through it). */
   gateway?: boolean;
+  /** Its name, e.g. "Razorpay". */
+  gatewayLabel?: string;
   canRefund?: boolean;
   refundState?: string | null;
 }) {
@@ -70,9 +73,9 @@ export function OnlineOrderActions({
     <div className="space-y-3">
       {gateway && status === "awaiting_payment" && (
         <>
-          <p className="text-sm text-navy-600">Waiting for the customer to pay on PhonePe. PhonePe&apos;s answer marks the order paid by itself.</p>
-          <Button variant="outline" icon={<RefreshCw className="h-4 w-4" />} loading={busy} onClick={() => call("check", {}, "Checked with PhonePe")}>
-            Check with PhonePe now
+          <p className="text-sm text-navy-600">Waiting for the customer to pay on {gatewayLabel}. {gatewayLabel}&apos;s answer marks the order paid by itself.</p>
+          <Button variant="outline" icon={<RefreshCw className="h-4 w-4" />} loading={busy} onClick={() => call("check", {}, `Checked with ${gatewayLabel}`)}>
+            Check with {gatewayLabel} now
           </Button>
         </>
       )}
@@ -83,9 +86,9 @@ export function OnlineOrderActions({
       )}
       {gateway && status === "refunding" && (
         <>
-          <p className="text-sm text-navy-600">{refundState === "FAILED" ? "PhonePe could not complete the refund. Retry it below." : "The refund is with PhonePe. This page shows when it completes."}</p>
+          <p className="text-sm text-navy-600">{refundState === "FAILED" ? `${gatewayLabel} could not complete the refund. Retry it below.` : `The refund is with ${gatewayLabel}. This page shows when it completes.`}</p>
           {refundState === "FAILED" && canRefund && (
-            <Button icon={<Undo2 className="h-4 w-4" />} loading={busy} onClick={() => call("refund", { reason: "" }, "Refund sent to PhonePe again")}>
+            <Button icon={<Undo2 className="h-4 w-4" />} loading={busy} onClick={() => call("refund", { reason: "" }, `Refund sent to ${gatewayLabel} again`)}>
               Retry refund
             </Button>
           )}
@@ -96,7 +99,7 @@ export function OnlineOrderActions({
           <Alert tone="warning">
             {gateway ? (
               <>
-                PhonePe reported a different amount than the order total of <strong>{formatPrice(total)}</strong>. Check this order in the PhonePe Business dashboard; verify only if the full amount was received, otherwise mark it not found.
+                {gatewayLabel} reported a different amount than the order total of <strong>{formatPrice(total)}</strong>. Check this order in the {gatewayLabel} dashboard; verify only if the full amount was received, otherwise mark it not found.
               </>
             ) : (
               <>
@@ -152,7 +155,7 @@ export function OnlineOrderActions({
             onChange={(e) => setSeen(e.target.checked)}
             label={
               <span>
-                I can see <strong>{formatPrice(total)}</strong> received{utr ? <> with UTR <strong className="tabular">{utr}</strong></> : null} in the shop&apos;s {gateway ? "PhonePe Business dashboard" : "bank / UPI app"}.
+                I can see <strong>{formatPrice(total)}</strong> received{utr ? <> with UTR <strong className="tabular">{utr}</strong></> : null} in the shop&apos;s {gateway ? `${gatewayLabel} dashboard` : "bank / UPI app"}.
               </span>
             }
           />
@@ -186,11 +189,11 @@ export function OnlineOrderActions({
         open={open === "refund"}
         onClose={close}
         title={`Cancel ${orderNumber} and refund ${formatPrice(total)}?`}
-        description="The full amount goes back through PhonePe to the account the customer paid from. The customer sees the reason."
+        description={`The full amount goes back through ${gatewayLabel} to the account the customer paid from. The customer sees the reason.`}
         footer={
           <>
             <Button variant="ghost" onClick={close}>Back</Button>
-            <Button variant="danger" disabled={note.trim().length < 3} loading={busy} onClick={() => call("refund", { reason: note.trim() }, "Refund sent to PhonePe")}>
+            <Button variant="danger" disabled={note.trim().length < 3} loading={busy} onClick={() => call("refund", { reason: note.trim() }, `Refund sent to ${gatewayLabel}`)}>
               Cancel and refund
             </Button>
           </>

@@ -4,6 +4,7 @@ export type ErrorCode =
   | "UNAUTHENTICATED"
   | "FORBIDDEN"
   | "NOT_FOUND"
+  | "BAD_REQUEST"
   | "VALIDATION"
   | "CONFLICT"
   | "RATE_LIMITED"
@@ -16,6 +17,7 @@ const STATUS: Record<ErrorCode, number> = {
   UNAUTHENTICATED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  BAD_REQUEST: 400,
   VALIDATION: 422,
   CONFLICT: 409,
   RATE_LIMITED: 429,
@@ -42,6 +44,8 @@ export class AppError extends Error {
 
 export const forbidden = (msg = "You do not have permission to do this") => new AppError("FORBIDDEN", msg);
 export const notFound = (what = "Record") => new AppError("NOT_FOUND", `${what} not found`);
+/** The request itself can't be trusted (e.g. a payment signature that doesn't match): 400. */
+export const badRequest = (msg: string, details?: Record<string, unknown>) => new AppError("BAD_REQUEST", msg, details);
 export const invalid = (msg: string, details?: Record<string, unknown>) => new AppError("VALIDATION", msg, details);
 export const conflict = (msg: string, details?: Record<string, unknown>) => new AppError("CONFLICT", msg, details);
 export const precondition = (msg: string, details?: Record<string, unknown>) =>
