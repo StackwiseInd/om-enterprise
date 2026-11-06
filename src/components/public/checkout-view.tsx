@@ -89,9 +89,12 @@ export function CheckoutView({ account, pickup, shopName, mode }: { account: { n
   if (!onlinePay) return <Alert tone="info">Online payment isn&apos;t available right now. You can still <Link href="/enquiry" className="font-semibold underline">send your cart as a request</Link>.</Alert>;
   if (!cart.items.length)
     return (
-      <div className="blueprint rounded-xl border border-navy-200 p-10 text-center">
-        <p className="font-semibold text-navy-950">Your cart is empty</p>
-        <Link href="/products" className="mt-4 inline-flex h-10 items-center rounded-lg bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800">Browse products</Link>
+      <div className="space-y-4">
+        <WaitingOrders />
+        <div className="blueprint rounded-xl border border-navy-200 p-10 text-center">
+          <p className="font-semibold text-navy-950">Your cart is empty</p>
+          <Link href="/products" className="mt-4 inline-flex h-10 items-center rounded-lg bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800">Browse products</Link>
+        </div>
       </div>
     );
 
@@ -169,6 +172,39 @@ export function CheckoutView({ account, pickup, shopName, mode }: { account: { n
           </p>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * The cart is emptied when an order is placed, so a customer who comes back from PhonePe's page with
+ * the Back button lands here. Show any order still waiting for payment, with a way to finish it.
+ */
+function WaitingOrders() {
+  const [orders, setOrders] = useState<{ orderNumber: string; total: string }[]>([]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    apiFetch<{ orderNumber: string; status: string; total: string }[]>("/api/shop/orders", { signal: ctrl.signal })
+      .then((list) => setOrders(list.filter((o) => o.status === "awaiting_payment")))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, []);
+  if (!orders.length) return null;
+  return (
+    <div role="status" className="rounded-xl border border-gold-300 bg-gold-50/60 p-5">
+      <p className="font-semibold text-navy-950">{orders.length === 1 ? "You have an order waiting for payment" : `You have ${orders.length} orders waiting for payment`}</p>
+      <ul className="mt-3 space-y-2">
+        {orders.map((o) => (
+          <li key={o.orderNumber} className="flex flex-wrap items-center justify-between gap-3">
+            <span className="tabular text-sm text-navy-700">
+              {o.orderNumber} · <span className="font-semibold text-navy-950">{formatPrice(o.total)}</span>
+            </span>
+            <Link href={`/my-orders/${o.orderNumber}`} className="inline-flex h-10 items-center rounded-lg bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800">
+              Continue to payment
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
