@@ -6,6 +6,7 @@ import { formatPhone, whatsappLink } from "@/lib/india";
 import { HeaderClient } from "./header-client";
 import { getShopAccount } from "@/server/auth/shop-session";
 import { FloatGate } from "./float-gate";
+import { POLICY_PAGES } from "./policy";
 import { addressLines, addressShort, getSiteData, mapsHref, telHref } from "./site-data";
 
 /* ------------------------------------------------------------------ */
@@ -146,9 +147,16 @@ async function FooterWithData() {
             © {year} {business.name}
             {business.gstin ? ` · GSTIN ${business.gstin}` : ""}
           </span>
-          <Link href="/login" className="transition-colors hover:text-navy-200">
-            Staff login
-          </Link>
+          <nav aria-label="Policies" className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {POLICY_PAGES.map((p) => (
+              <Link key={p.href} href={p.href} className="transition-colors hover:text-navy-200">
+                {p.label}
+              </Link>
+            ))}
+            <Link href="/login" className="transition-colors hover:text-navy-200">
+              Staff login
+            </Link>
+          </nav>
         </div>
       </div>
     </footer>

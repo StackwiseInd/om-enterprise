@@ -10,7 +10,7 @@ import { getMyOrder } from "@/server/services/online-orders";
 
 export const metadata: Metadata = { title: "Your order", robots: { index: false } };
 
-export default function OrderPage({ params }: PageProps<"/my-orders/[number]">) {
+export default function OrderPage({ params, searchParams }: PageProps<"/my-orders/[number]">) {
   return (
     <Suspense
       fallback={
@@ -19,17 +19,19 @@ export default function OrderPage({ params }: PageProps<"/my-orders/[number]">) 
         </Container>
       }
     >
-      <Content params={params} />
+      <Content params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Content({ params }: { params: PageProps<"/my-orders/[number]">["params"] }) {
+async function Content({ params, searchParams }: { params: PageProps<"/my-orders/[number]">["params"]; searchParams: PageProps<"/my-orders/[number]">["searchParams"] }) {
   const { number } = await params;
+  // Back from PhonePe's page: ask PhonePe for the result straight away.
+  const fromGateway = (await searchParams).from === "phonepe";
   const account = await getShopAccount();
   if (!account) redirect(`/sign-in?next=/my-orders/${encodeURIComponent(number)}`);
   if (!/^OL\d{6,}$/.test(number)) notFound();
-  const data = await getMyOrder(account, number).catch(() => null);
+  const data = await getMyOrder(account, number, { fromGateway }).catch(() => null);
   if (!data) notFound();
   const { business } = await getSiteData();
   return (

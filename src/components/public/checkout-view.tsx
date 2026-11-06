@@ -19,7 +19,8 @@ interface Preview {
   total: string;
 }
 
-export function CheckoutView({ account, pickup, shopName, onlinePay }: { account: { name: string; mobile: string }; pickup: string; shopName: string; onlinePay: boolean }) {
+export function CheckoutView({ account, pickup, shopName, mode }: { account: { name: string; mobile: string }; pickup: string; shopName: string; mode: "phonepe" | "upi_manual" | null }) {
+  const onlinePay = mode !== null;
   const router = useRouter();
   const cart = useEnquiryList();
   const items = useMemo(() => cart.items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })), [cart.items]);
@@ -74,9 +75,11 @@ export function CheckoutView({ account, pickup, shopName, onlinePay }: { account
     setBusy("place");
     setError(null);
     try {
-      const { orderNumber } = await apiFetch<{ orderNumber: string }>("/api/shop/orders", { body: { items, couponCode: applied } });
+      const { orderNumber, payUrl } = await apiFetch<{ orderNumber: string; payUrl: string | null }>("/api/shop/orders", { body: { items, couponCode: applied } });
       cart.clear();
-      router.push(`/my-orders/${orderNumber}`);
+      // PhonePe: straight to its payment page; it brings the customer back to the order page.
+      if (payUrl) window.location.assign(payUrl);
+      else router.push(`/my-orders/${orderNumber}`);
     } catch (err) {
       setError(errorMessage(err));
       setBusy(null);
@@ -153,7 +156,17 @@ export function CheckoutView({ account, pickup, shopName, onlinePay }: { account
           <Button onClick={place} loading={busy === "place"} disabled={!preview || !!error} className="h-12 w-full text-[15px]">
             Place order and pay {preview ? formatPrice(preview.total) : ""}
           </Button>
-          <p className="text-xs leading-relaxed text-navy-500">Next you&apos;ll see a UPI QR for this exact amount. After paying, enter the UPI transaction ID (UTR). We confirm the payment against our bank account, then your order is placed.</p>
+          <p className="text-xs leading-relaxed text-navy-500">
+            {mode === "phonepe"
+              ? "You'll pay on PhonePe's secure page by UPI, card or net banking. As soon as PhonePe confirms the payment, your order is placed."
+              : "Next you'll see a UPI QR for this exact amount. After paying, enter the UPI transaction ID (UTR). We confirm the payment against our bank account, then your order is placed."}
+          </p>
+          <p className="text-xs leading-relaxed text-navy-500">
+            Orders are collected from the shop. By placing the order you agree to our{" "}
+            <Link href="/terms" className="font-medium text-navy-700 underline underline-offset-2 hover:text-navy-950">terms</Link>,{" "}
+            <Link href="/refund-policy" className="font-medium text-navy-700 underline underline-offset-2 hover:text-navy-950">refund policy</Link> and{" "}
+            <Link href="/pickup-policy" className="font-medium text-navy-700 underline underline-offset-2 hover:text-navy-950">pickup policy</Link>.
+          </p>
         </div>
       </section>
     </div>

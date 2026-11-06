@@ -68,6 +68,13 @@ export function ShopAuthForm({ mode, next }: { mode: "sign-in" | "sign-up"; next
       <Button type="submit" loading={busy} className="h-12 w-full text-[15px]">
         {mode === "sign-up" ? "Create account" : "Sign in"}
       </Button>
+      {mode === "sign-up" && (
+        <p className="text-center text-xs leading-relaxed text-navy-500">
+          By creating an account you agree to our{" "}
+          <Link href="/terms" className="font-medium text-navy-700 underline underline-offset-2 hover:text-navy-950">terms of use</Link> and{" "}
+          <Link href="/privacy" className="font-medium text-navy-700 underline underline-offset-2 hover:text-navy-950">privacy policy</Link>.
+        </p>
+      )}
       <p className="text-center text-sm text-navy-500">
         {mode === "sign-in" ? "New here? " : "Already have an account? "}
         <Link href={next ? `${other}?next=${encodeURIComponent(target)}` : other} className="link-draw font-semibold text-navy-950">

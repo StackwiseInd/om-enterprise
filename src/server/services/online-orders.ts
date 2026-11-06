@@ -10,6 +10,7 @@ import { getSettings } from "@/server/settings";
 import { pricePublicCart } from "@/server/services/public-catalog";
 import { evaluateCoupon, releaseCoupon, type AppliedCoupon } from "@/server/services/coupons";
 import { customerAuditActor, type ShopAccount } from "@/server/services/shop-auth";
+import { gatewayEnabled, openGatewayCheckout, reconcileOpenOrders, reconcileOrder, retryGatewayPayment, GATEWAY_PAY_SECONDS } from "@/server/services/online-payments";
 import { buildUpiUri, isValidUpiUtr } from "@/lib/india";
 import { D, formatPrice, m } from "@/lib/money";
 
@@ -37,7 +38,8 @@ export async function expireStaleOrders(tx: Tx) {
   const gone = await tx
     .update(onlineOrders)
     .set({ status: "expired", updatedAt: new Date() })
-    .where(and(eq(onlineOrders.status, "awaiting_payment"), lt(onlineOrders.expiresAt, new Date())))
+    // PhonePe orders are never expired by the clock: only PhonePe's own answer closes them.
+    .where(and(eq(onlineOrders.status, "awaiting_payment"), eq(onlineOrders.paymentMethod, "upi_manual"), lt(onlineOrders.expiresAt, new Date())))
     .returning({ id: onlineOrders.id, couponId: onlineOrders.couponId, orderNumber: onlineOrders.orderNumber });
   for (const o of gone) {
     await releaseCoupon(tx, o.couponId);
@@ -65,6 +67,13 @@ async function upiConfig() {
   return p;
 }
 
+/** Online payment is offered with PhonePe (preferred) or, until it is set up, the shop's UPI QR. */
+export async function onlinePaymentMode(): Promise<"phonepe" | "upi_manual" | null> {
+  if (gatewayEnabled()) return "phonepe";
+  const p = await getSettings("payments");
+  return p.upiEnabled && p.upiVpa ? "upi_manual" : null;
+}
+
 /** What the checkout page shows: priced lines, the code's discount (if valid) and the amount to pay. */
 export async function previewCheckout(account: ShopAccount, input: { items: Item[]; couponCode?: string | null }, client: Client) {
   const priced = await priceForCheckout(input.items);
@@ -79,10 +88,11 @@ export async function previewCheckout(account: ShopAccount, input: { items: Item
 
 export async function placeOnlineOrder(account: ShopAccount, input: { items: Item[]; couponCode?: string | null }, client: Client) {
   await enforceRateLimit(`online-order:${account.id}`, 10, 60 * 60, "Too many orders in an hour. Please wait a little.");
-  const pay = await upiConfig();
+  const gateway = gatewayEnabled();
+  const pay = gateway ? null : await upiConfig();
   const priced = await priceForCheckout(input.items);
   const db = getDb();
-  return db.transaction(async (tx) => {
+  const placed = await db.transaction(async (tx) => {
     await expireStaleOrders(tx);
     const [open] = await tx
       .select({ c: sql<number>`count(*)::int` })
@@ -96,14 +106,16 @@ export async function placeOnlineOrder(account: ShopAccount, input: { items: Ite
 
     const seq = await tx.execute<{ n: number }>(sql`select nextval('online_order_seq')::int as n`);
     const orderNumber = `OL${String(seq.rows[0].n).padStart(6, "0")}`;
-    const qrPayload = buildUpiUri({
-      vpa: pay.upiVpa,
-      payeeName: pay.upiPayeeName || "OM ENTERPRISE",
-      amount: D(t.total).toFixed(2),
-      note: `Order ${orderNumber}`,
-      merchantCode: pay.upiMerchantCode || null,
-      reference: orderNumber,
-    });
+    const qrPayload = pay
+      ? buildUpiUri({
+          vpa: pay.upiVpa,
+          payeeName: pay.upiPayeeName || "OM ENTERPRISE",
+          amount: D(t.total).toFixed(2),
+          note: `Order ${orderNumber}`,
+          merchantCode: pay.upiMerchantCode || null,
+          reference: orderNumber,
+        })
+      : null;
     const [order] = await tx
       .insert(onlineOrders)
       .values({
@@ -114,9 +126,12 @@ export async function placeOnlineOrder(account: ShopAccount, input: { items: Ite
         ...t,
         couponId: coupon?.id ?? null,
         couponCode: coupon?.code ?? null,
-        upiVpa: pay.upiVpa,
+        paymentMethod: gateway ? "phonepe" : "upi_manual",
+        upiVpa: pay?.upiVpa ?? null,
         qrPayload,
-        expiresAt: new Date(Date.now() + PAY_WITHIN_MINUTES * 60_000),
+        gatewayAttempt: gateway ? 1 : 0,
+        gatewayMerchantOrderId: gateway ? `${orderNumber}-1` : null,
+        expiresAt: new Date(Date.now() + (gateway ? GATEWAY_PAY_SECONDS + 15 * 60 : PAY_WITHIN_MINUTES * 60) * 1000),
         ipHash: hashIp(client.ip),
       })
       .returning();
@@ -138,11 +153,27 @@ export async function placeOnlineOrder(account: ShopAccount, input: { items: Ite
       action: "online_order.place",
       entityType: "online_order",
       entityId: order.id,
-      summary: `Placed ${orderNumber}: ${priced.lines.length} items, ${formatPrice(t.subtotal)}${coupon ? ` − ${formatPrice(t.discount)} (code ${coupon.code})` : ""} = ${formatPrice(t.total)} to pay by UPI`,
-      data: { subtotal: t.subtotal, discount: t.discount, total: t.total, couponCode: coupon?.code ?? null },
+      summary: `Placed ${orderNumber}: ${priced.lines.length} items, ${formatPrice(t.subtotal)}${coupon ? ` − ${formatPrice(t.discount)} (code ${coupon.code})` : ""} = ${formatPrice(t.total)} to pay ${gateway ? "on PhonePe" : "by UPI QR"}`,
+      data: { subtotal: t.subtotal, discount: t.discount, total: t.total, couponCode: coupon?.code ?? null, method: gateway ? "phonepe" : "upi_manual" },
     });
-    return { orderNumber };
+    return { orderNumber, id: order.id };
   });
+  // PhonePe's page is opened after the order is safely stored (no network call inside the transaction).
+  const payUrl = gateway ? await openGatewayCheckout(placed.id) : null;
+  return { orderNumber: placed.orderNumber, payUrl };
+}
+
+/** The customer is sent (back) to PhonePe: the open page, or a new attempt after a failed one. */
+export async function payMyOrder(account: ShopAccount, orderNumber: string, client: Client) {
+  const db = getDb();
+  const o = await findMyOrder(db, account, orderNumber);
+  if (o.paymentMethod !== "phonepe") throw conflict("This order is paid by UPI QR on its page.");
+  await reconcileOrder(o.id, { force: true });
+  const cur = await findMyOrder(db, account, orderNumber);
+  if (cur.status === "awaiting_payment" && cur.gatewayRedirectUrl && cur.gatewayExpiresAt && cur.gatewayExpiresAt.getTime() > Date.now() + 30_000) return { payUrl: cur.gatewayRedirectUrl };
+  if (cur.status === "payment_failed") return { payUrl: await retryGatewayPayment(account.id, orderNumber, customerAuditActor(account, client)) };
+  if (cur.status === "awaiting_payment") throw precondition("PhonePe is still confirming your last attempt. Please wait a minute and refresh.");
+  throw conflict("This order doesn't need a payment.");
 }
 
 async function findMyOrder(tx: Tx, account: ShopAccount, orderNumber: string, lock = false) {
@@ -152,10 +183,15 @@ async function findMyOrder(tx: Tx, account: ShopAccount, orderNumber: string, lo
   return o;
 }
 
-export async function getMyOrder(account: ShopAccount, orderNumber: string) {
+export async function getMyOrder(account: ShopAccount, orderNumber: string, opts: { fromGateway?: boolean } = {}) {
   const db = getDb();
   await db.transaction((tx) => expireStaleOrders(tx));
-  const order = await findMyOrder(db, account, orderNumber);
+  let order = await findMyOrder(db, account, orderNumber);
+  if (order.paymentMethod === "phonepe") {
+    // Back from PhonePe: ask straight away; otherwise follow PhonePe's check schedule.
+    await reconcileOrder(order.id, { force: opts.fromGateway });
+    order = await findMyOrder(db, account, orderNumber);
+  }
   const lines = await db.select().from(onlineOrderLines).where(eq(onlineOrderLines.orderId, order.id));
   return { order: publicOrder(order), lines };
 }
@@ -176,10 +212,16 @@ function publicOrder(o: typeof onlineOrders.$inferSelect) {
     discount: o.discount,
     total: o.total,
     couponCode: o.couponCode,
+    paymentMethod: o.paymentMethod,
     upiVpa: o.upiVpa,
     qrPayload: o.status === "awaiting_payment" ? o.qrPayload : null,
+    canPayNow: o.paymentMethod === "phonepe" && o.status === "awaiting_payment" && !!o.gatewayRedirectUrl && !!o.gatewayExpiresAt && o.gatewayExpiresAt.getTime() > Date.now() + 30_000,
+    gatewayPaymentMode: o.gatewayPaymentMode,
+    gatewayState: o.gatewayState,
+    refundState: o.refundState,
+    refundedAt: o.refundedAt?.toISOString() ?? null,
     expiresAt: o.expiresAt.toISOString(),
-    utr: o.utr,
+    utr: o.utr ?? o.gatewayUtr,
     utrSubmittedAt: o.utrSubmittedAt?.toISOString() ?? null,
     verifiedAt: o.verifiedAt?.toISOString() ?? null,
     failureReason: o.failureReason,
@@ -204,6 +246,7 @@ export async function submitUtr(account: ShopAccount, orderNumber: string, rawUt
   return db.transaction(async (tx) => {
     await expireStaleOrders(tx);
     const o = await findMyOrder(tx, account, orderNumber, true);
+    if (o.paymentMethod !== "upi_manual") throw conflict("This order is paid on PhonePe; no UTR is needed.");
     if (o.status === "expired") throw precondition("This order expired before the payment details arrived. If money was debited, contact the shop with your UTR.");
     if (o.status !== "awaiting_payment") throw conflict("Payment details for this order have already been sent.");
     const [dup] = await tx
@@ -226,6 +269,9 @@ export async function submitUtr(account: ShopAccount, orderNumber: string, rawUt
 }
 
 export async function cancelMyOrder(account: ShopAccount, orderNumber: string, client: Client) {
+  const first = await findMyOrder(getDb(), account, orderNumber);
+  // A PhonePe payment may have just gone through: ask before cancelling.
+  if (first.paymentMethod === "phonepe") await reconcileOrder(first.id, { force: true });
   return getDb().transaction(async (tx) => {
     const o = await findMyOrder(tx, account, orderNumber, true);
     if (o.status !== "awaiting_payment") throw conflict("Only an order that hasn't been paid can be cancelled here. Please contact the shop.");
@@ -243,6 +289,7 @@ export async function listOnlineOrders(actor: Actor, status?: OnlineOrderStatus 
   requirePermission(actor, ["orders.view", "payments.verify"]);
   const db = getDb();
   await db.transaction((tx) => expireStaleOrders(tx));
+  await reconcileOpenOrders().catch((err) => console.error("[phonepe] reconcile", err));
   const where = status === "to_verify" ? eq(onlineOrders.status, "payment_submitted") : status ? eq(onlineOrders.status, status) : undefined;
   return db
     .select({ o: onlineOrders, itemCount: sql<number>`(select count(*)::int from online_order_lines l where l.order_id = "online_orders"."id")` })
@@ -261,6 +308,7 @@ export async function getOnlineOrder(actor: Actor, id: string) {
   requirePermission(actor, ["orders.view", "payments.verify"]);
   const db = getDb();
   await db.transaction((tx) => expireStaleOrders(tx));
+  await reconcileOrder(id).catch((err) => console.error("[phonepe] reconcile", err));
   const [row] = await db.select({ o: onlineOrders, verifiedByName: users.displayName }).from(onlineOrders).leftJoin(users, eq(users.id, onlineOrders.verifiedBy)).where(eq(onlineOrders.id, id));
   if (!row) throw notFound("Online order");
   const lines = await db.select().from(onlineOrderLines).where(eq(onlineOrderLines.orderId, id));
@@ -284,8 +332,9 @@ export async function verifyOnlinePayment(actor: Actor, id: string, input: { not
   requirePermission(actor, "payments.verify");
   return getDb().transaction(async (tx) => {
     const o = await lockOrder(tx, id);
-    if (o.status !== "payment_submitted" || !o.utr) throw conflict("This order has no payment waiting to be checked");
-    if (await utrUsedAtCounter(tx, o.utr)) throw conflict(`UTR ${o.utr} is already confirmed against a counter payment`);
+    if (o.paymentMethod === "phonepe" && !o.verificationNote?.startsWith("PhonePe reports")) throw conflict("PhonePe confirms this order's payment automatically.");
+    if (o.status !== "payment_submitted" || (!o.utr && !o.gatewayTransactionId)) throw conflict("This order has no payment waiting to be checked");
+    if (o.utr && (await utrUsedAtCounter(tx, o.utr))) throw conflict(`UTR ${o.utr} is already confirmed against a counter payment`);
     const now = new Date();
     await tx
       .update(onlineOrders)
@@ -296,7 +345,7 @@ export async function verifyOnlinePayment(actor: Actor, id: string, input: { not
       action: "online_order.payment_verified",
       entityType: "online_order",
       entityId: id,
-      summary: `Payment for ${o.orderNumber} verified: ${formatPrice(o.total)} received, UTR ${o.utr}${o.couponCode ? `; code ${o.couponCode} used` : ""}`,
+      summary: `Payment for ${o.orderNumber} verified: ${formatPrice(o.total)} received, ${o.utr ? `UTR ${o.utr}` : `PhonePe transaction ${o.gatewayTransactionId}`}${o.couponCode ? `; code ${o.couponCode} used` : ""}`,
     });
   });
 }

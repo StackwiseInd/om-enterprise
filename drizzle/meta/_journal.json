@@ -71,6 +71,13 @@
       "when": 1793937788927,
       "tag": "0009_online_shop",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793941468942,
+      "tag": "0010_phonepe_gateway",
+      "breakpoints": true
     }
   ]
 }

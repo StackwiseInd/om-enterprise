@@ -46,6 +46,23 @@ test.describe("public website", () => {
     await ctx.close();
   });
 
+  test("the policy pages are linked from the footer and name the shop", async ({ page }) => {
+    await page.goto("/");
+    const footer = page.locator("footer");
+    for (const [label, heading] of [
+      ["Terms of use", "Terms of use"],
+      ["Refunds & cancellation", "Refunds & cancellation"],
+      ["Pickup & delivery", "Pickup & delivery"],
+      ["Privacy policy", "Privacy policy"],
+    ]) {
+      await footer.getByRole("link", { name: label }).click();
+      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+      await expect(page.getByText("Questions about this policy")).toBeVisible();
+      await expectNoHorizontalScroll(page);
+    }
+    await expect(page.getByText(/Data Protection Board of India/)).toBeVisible();
+  });
+
   test("an invalid share link shows a friendly page and no data", async ({ page }) => {
     // Streaming pages can't change the HTTP status once the shell is sent; what matters is that
     // nothing is revealed and the page is not indexed.

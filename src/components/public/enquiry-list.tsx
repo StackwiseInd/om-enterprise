@@ -184,7 +184,7 @@ export function EnquiryList({ whatsapp, priceNote, enquiriesEnabled, onlinePay }
                   <QrCode className="mt-0.5 h-5 w-5 shrink-0 text-gold-600" />
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold text-navy-950">Pay online, collect from the store</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-navy-500">Sign in, add a discount code if you have one, and pay the exact amount by UPI. We confirm your payment and keep the items ready at the counter.</p>
+                    <p className="mt-1 text-sm leading-relaxed text-navy-500">Sign in, add a discount code if you have one, and pay online. Once the payment is confirmed, we keep the items ready at the counter.</p>
                   </div>
                 </div>
                 {priced && (!priced.allPriced || unavailable.length > 0 || priced.lines.some((l) => l.isSample)) ? (
@@ -196,7 +196,7 @@ export function EnquiryList({ whatsapp, priceNote, enquiriesEnabled, onlinePay }
                     href="/checkout"
                     className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-navy-900 px-5 text-[15px] font-semibold text-white shadow-[inset_0_-1px_0_rgb(0_0_0/0.35)] transition-colors hover:bg-navy-800"
                   >
-                    Checkout and pay by UPI <ArrowRight className="h-4 w-4" />
+                    Checkout and pay online <ArrowRight className="h-4 w-4" />
                   </Link>
                 )}
               </div>

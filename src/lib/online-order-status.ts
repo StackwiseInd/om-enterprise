@@ -10,4 +10,6 @@ export const ONLINE_ORDER_STATUS: Record<OnlineOrderStatus, { customer: string; 
   collected: { customer: "Collected", staff: "Collected", tone: "neutral" },
   cancelled: { customer: "Cancelled", staff: "Cancelled", tone: "neutral" },
   expired: { customer: "Expired (not paid)", staff: "Expired", tone: "neutral" },
+  refunding: { customer: "Refund in progress", staff: "Refunding", tone: "amber" },
+  refunded: { customer: "Refunded", staff: "Refunded", tone: "neutral" },
 };

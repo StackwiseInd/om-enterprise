@@ -33,7 +33,7 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
       <PageHeader
         eyebrow="Sales"
         title="Online orders"
-        description="Paid online by UPI, collected at the store. A payment counts only after someone checks the credit in the shop's bank or UPI app."
+        description="Paid online, collected at the store. PhonePe payments are confirmed by PhonePe itself; UPI QR payments count only after someone checks the credit in the shop's bank or UPI app."
       />
       <FilterBar
         fields={[
@@ -51,6 +51,8 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
               { value: "payment_failed", label: "Payment not found" },
               { value: "cancelled", label: "Cancelled" },
               { value: "expired", label: "Expired" },
+              { value: "refunding", label: "Refunding" },
+              { value: "refunded", label: "Refunded" },
             ],
           },
         ]}
@@ -74,7 +76,7 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
                 <th className={th}>Customer</th>
                 <th className={thNum}>Items</th>
                 <th className={thNum}>To pay</th>
-                <th className={th}>UTR</th>
+                <th className={th}>Paid via</th>
                 <th className={th}>Status</th>
               </tr>
             </thead>
@@ -98,7 +100,10 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
                     <Money value={o.total} />
                     {o.couponCode && <div className="font-sans text-xs text-emerald-700">− {o.discount} ({o.couponCode})</div>}
                   </td>
-                  <td data-label="UTR" className={`${tdText} tabular`}>{o.utr ?? <span className="text-navy-300">—</span>}</td>
+                  <td data-label="Paid via" className={tdText}>
+                    <div>{o.paymentMethod === "phonepe" ? "PhonePe" : "UPI QR"}</div>
+                    {(o.utr || o.gatewayUtr || o.gatewayPaymentMode) && <div className="tabular text-xs text-navy-500">{o.gatewayPaymentMode ?? ""}{o.utr || o.gatewayUtr ? ` UTR ${o.utr ?? o.gatewayUtr}` : ""}</div>}
+                  </td>
                   <td data-label="Status" className={tdText}>
                     <Badge tone={ONLINE_ORDER_STATUS[o.status].tone}>{ONLINE_ORDER_STATUS[o.status].staff}</Badge>
                   </td>

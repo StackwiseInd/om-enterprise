@@ -160,6 +160,10 @@ npm run dev                     # http://localhost:3000  (owner: /admin, staff: 
 | `TRUST_PROXY` | no | `true` (default) reads client IPs from `X-Forwarded-For` set by your reverse proxy. Keep the app port private (only the proxy may reach it). |
 | `TRUST_PROXY_HOPS` | no | Number of reverse proxies in front of the app (default `1`). The client IP is taken that many entries from the right of `X-Forwarded-For`, so a forged header can't dodge rate limits. |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | optional | Only for the Razorpay dynamic-QR integration. |
+| `PHONEPE_CLIENT_ID`, `PHONEPE_CLIENT_SECRET`, `PHONEPE_CLIENT_VERSION` | optional | PhonePe Payment Gateway credentials for website orders (see [PhonePe Payment Gateway](#phonepe-payment-gateway-website-orders)). When all three are set, checkout pays through PhonePe instead of the UPI QR. |
+| `PHONEPE_ENV` | with PhonePe | `production` for live keys; anything else (default) uses PhonePe's sandbox (UAT). |
+| `PHONEPE_WEBHOOK_USERNAME`, `PHONEPE_WEBHOOK_PASSWORD` | with PhonePe | The username and password you type when adding the webhook in the PhonePe Business dashboard. |
+| `CRON_SECRET` | no | Vercel sends it to the scheduled jobs (`/api/cron/*`); requests without it are refused. |
 | `DB_POOL_MAX` | no | Connection pool size (default 10). |
 
 All variables are server-only. Never put secrets in `NEXT_PUBLIC_*` variables, and never commit `.env` files.
@@ -491,17 +495,46 @@ Implemented in `src/server/payments/providers.ts` against Razorpay's documentati
 
 ## Online orders, customer accounts and discount codes
 
-Website visitors can **pay online by UPI and collect from the store** (no delivery).
+Website visitors can **pay online and collect from the store** (no delivery). With PhonePe keys set, payment goes through **PhonePe Payment Gateway** and is confirmed automatically; without them, the order page shows the shop's **UPI QR** and staff confirm the UTR by hand.
 
 - **Cart:** "Add to cart" on any product; the cart lives in the browser and is re-priced on the server every time it is shown.
 - **Customer accounts** (`/sign-up`, `/sign-in`, `/my-orders`): name, mobile number and password. Separate from staff accounts (own table and cookie). Eight wrong passwords lock the account for 15 minutes; sign-ups and sign-ins are rate-limited. There is no self-service reset yet: customers ask the shop.
 - **Checkout** (`/checkout`, signed in): every item must have an online price (no "price on request" or sample items) and the total must be under ₹1,00,000. A discount code is optional.
-- **Payment:** the order page shows a UPI QR for the **exact amount** (and the order number), payable for 60 minutes. After paying, the customer enters the **12-digit UTR**. The system refuses a malformed UTR, a UTR already given for another live order, a UTR already confirmed at the counter, and an order that has expired.
-- **Verification is done by a person.** As with counter payments, nothing can see money arrive in a plain UPI ID, so the order shows "Checking payment" until someone with *payments.verify* opens **Dashboard → Online orders**, finds the exact amount and UTR in the shop's bank/UPI app and clicks **Payment received** (or **Not found**, with a reason the customer sees). The customer's page updates by itself to "Payment verified. Your order is placed." or "Payment not found". For automatic confirmation, use a payment gateway (see Razorpay above).
+- **Payment with PhonePe:** see the next section. The rest of this list describes the UPI QR fallback, used only when PhonePe isn't set up.
+- **Payment by UPI QR:** the order page shows a UPI QR for the **exact amount** (and the order number), payable for 60 minutes. After paying, the customer enters the **12-digit UTR**. The system refuses a malformed UTR, a UTR already given for another live order, a UTR already confirmed at the counter, and an order that has expired.
+- **Verification is done by a person.** As with counter payments, nothing can see money arrive in a plain UPI ID, so the order shows "Checking payment" until someone with *payments.verify* opens **Dashboard → Online orders**, finds the exact amount and UTR in the shop's bank/UPI app and clicks **Payment received** (or **Not found**, with a reason the customer sees). The customer's page updates by itself to "Payment verified. Your order is placed." or "Payment not found". For automatic confirmation, set up PhonePe (below).
 - **Pickup:** staff mark **Ready for pickup** and **Handed over**. Make the GST bill at the counter as usual and record the UPI payment there with the same UTR.
 - **Discount codes** (**Dashboard → Discount codes**, *discounts.configure*): generate up to 500 single-use codes per batch, each a flat ₹ amount off, with an optional minimum order (above the amount off) and end date. Codes look like `OM-7K3F-9QXD` (no look-alike characters) and can be typed in any case, with or without dashes. A code is **reserved** while its order waits for payment, **used** once the payment is verified, and freed again if the order is cancelled, expires or its payment isn't found. Download a batch as CSV, or disable unused codes.
 - **Everything is logged** in the audit log: sign-ups, failed sign-ins and lockouts, code generation and disabling, order placed (with amounts and code), UTR sent or refused, payment verified or not found, ready, collected, cancelled and expired. Each online order's page shows its own history.
-- Online payment is offered only when UPI QR is enabled in Settings → Payments.
+- Online payment is offered when PhonePe is set up, or otherwise when UPI QR is enabled in Settings → Payments.
+- **Policy pages:** `/terms`, `/refund-policy`, `/pickup-policy` and `/privacy`, linked from the footer, checkout and sign-up. They take the shop's name, address and contact details from Settings → Business. **Have the owner read them before going live.** The 7-day return window, the "collect within 7 days" note and the refund timing are sensible defaults, not legal advice; edit `src/app/(public)/*/page.tsx` to change them (and `POLICY_UPDATED` in `src/components/public/policy.tsx`). PhonePe asks for these pages during onboarding.
+
+### PhonePe Payment Gateway (website orders)
+
+PhonePe Standard Checkout v2, called with plain `fetch` (no SDK). The customer pays on PhonePe's page by UPI, card, net banking or wallet; PhonePe sends them back to `/my-orders/<number>`.
+
+**How a payment is confirmed.** An order becomes **paid only when this server asks PhonePe's Order Status API** (with its own OAuth token) and PhonePe answers `COMPLETED` for exactly the order total in paise. The browser coming back and PhonePe's webhook are only cues to ask; a forged webhook or a doctored redirect can't mark anything paid.
+
+- **Each attempt** has its own PhonePe id: `OL000123-1`, then `OL000123-2` after a failure (up to 5). The checkout page stays open 30 minutes.
+- **Status checks** follow PhonePe's required schedule: the first check after 20–25 seconds; then every 3 s for 30 s, every 6 s for 60 s, every 10 s for 60 s, every 30 s for 60 s; then once a minute. The checks run when the customer's order page polls, when staff open the online orders pages, when a webhook arrives, and in a daily cron as a safety net.
+- **Failed payment:** the order shows PhonePe's reason (for example "Wrong MPIN was entered"), the discount code is freed, and the customer can **Try again**.
+- **Amount mismatch** (never expected): the order is held as "Checking payment" for a person to look at in the PhonePe Business dashboard.
+- **Money that arrives after the order was cancelled or closed is refunded automatically**, in full.
+- **Refunds by staff:** someone with *payments.refund* opens a paid order (not yet collected) and clicks **Cancel and refund**, giving a reason. The refund goes back to the customer's original payment method; the page shows its PhonePe status, and **Retry refund** appears if PhonePe refuses it. When the refund completes, the order is "Refunded" and its discount code can be used again.
+- **Logged:** every webhook in `payment_events` (with whether its Authorization header checked out), and every step in the audit log with "PhonePe" as the actor: checkout opened, payment confirmed (mode, transaction id, UTR), failed, retried, late payment, refund started, failed and completed.
+
+**Setting it up**
+
+1. The owner signs up at **PhonePe Business → Payment Gateway** and completes KYC (PAN, GSTIN, bank account, website URL). PhonePe reviews the website: the four policy pages above and the contact page must be live.
+2. In the PhonePe Business dashboard, open **Developer Settings** and copy the **sandbox (UAT)** Client ID, Client Version and Client Secret.
+3. In Vercel → Settings → Environment Variables (Production), add `PHONEPE_CLIENT_ID`, `PHONEPE_CLIENT_VERSION`, `PHONEPE_CLIENT_SECRET` (mark it Sensitive), and choose a webhook username and password: `PHONEPE_WEBHOOK_USERNAME`, `PHONEPE_WEBHOOK_PASSWORD` (Sensitive). Leave `PHONEPE_ENV` unset for UAT. Check that `APP_BASE_URL` is the real site address: PhonePe sends customers back there.
+4. In the dashboard, **Developer Settings → Webhook**: URL `https://<your-site>/api/payments/webhook/phonepe`, the same username and password, and the events `checkout.order.completed`, `checkout.order.failed`, `pg.refund.completed`, `pg.refund.failed`.
+5. Redeploy. Checkout now opens PhonePe's UAT page. Run PhonePe's UAT test cases (success, failure, pending, refund) and send them for sign-off.
+6. After sign-off, swap in the **production** keys, set `PHONEPE_ENV=production`, add the webhook again on the production side, redeploy, and make a real ₹1–₹10 order and refund it.
+
+**Trying it without PhonePe.** `npx tsx tests/support/fake-phonepe-server.ts` starts a stand-in on port 4010 with a fake payment page (Pay / Fail buttons). Run the app with any three `PHONEPE_CLIENT_*` values and `PHONEPE_TEST_BASE_URL=http://localhost:4010` (add `PHONEPE_ALLOW_TEST_BASE_URL=true` for a production build). The test base URL is ignored in production unless that flag is set.
+
+**Costs.** PhonePe has no setup or annual fee. Its published pricing has been 0% on UPI for small merchants, with charges on cards and some other methods; check the current rate card in the dashboard before going live.
 
 ## Owner app on the phone (/admin/app)
 
