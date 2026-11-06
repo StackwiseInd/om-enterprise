@@ -60,7 +60,8 @@ test.describe("public website", () => {
       await expect(page.getByText("Questions about this policy").locator("visible=true")).toBeVisible();
       await expectNoHorizontalScroll(page);
     }
-    await expect(page.getByText(/Data Protection Board of India/)).toBeVisible();
+    await expect(page.getByText(/Data Protection Board of India/).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Grievance Officer/ })).toBeVisible();
   });
 
   test("an invalid share link shows a friendly page and no data", async ({ page }) => {
