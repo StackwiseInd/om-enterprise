@@ -57,7 +57,7 @@ test.describe("public website", () => {
     ]) {
       await footer.getByRole("link", { name: label }).click();
       await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
-      await expect(page.getByText("Questions about this policy")).toBeVisible();
+      await expect(page.getByText("Questions about this policy").locator("visible=true")).toBeVisible();
       await expectNoHorizontalScroll(page);
     }
     await expect(page.getByText(/Data Protection Board of India/)).toBeVisible();
