@@ -175,11 +175,18 @@ describe("PhonePe checkout: ₹1,000 cart, ₹100 code", () => {
     const a = await customer();
     const { orderNumber } = await placeOnlineOrder(a, { items: cart() }, client);
     const forged = createHash("sha256").update("omhook:guess").digest("hex");
+    fake.pay(`${orderNumber}-1`); // even if PhonePe really has it paid, a forged callback can't make us ask now
+    const before = fake.calls.length;
     expect(await webhook("checkout.order.completed", { merchantOrderId: `${orderNumber}-1`, state: "COMPLETED", amount: 100000 }, forged)).toMatchObject({ matched: true, verified: false });
+    expect(fake.calls.length).toBe(before);
     expect((await row(orderNumber)).status).toBe("awaiting_payment");
     const [ev] = await getDb().select().from(paymentEvents).where(eq(paymentEvents.eventId, createHash("sha256").update(JSON.stringify({ event: "checkout.order.completed", payload: { merchantOrderId: `${orderNumber}-1`, state: "COMPLETED", amount: 100000 } })).digest("hex")));
     expect(ev).toMatchObject({ provider: "phonepe", signatureValid: false, eventType: "checkout.order.completed" });
     expect(await webhook("checkout.order.completed", { merchantOrderId: "OL999999-1" })).toMatchObject({ matched: false });
+    // Noise that is neither authorised nor about one of our orders isn't stored at all.
+    const noise = JSON.stringify({ event: "checkout.order.completed", payload: { merchantOrderId: "OL888888-1" } });
+    expect(await handlePhonePeWebhook(noise, forged)).toMatchObject({ ok: true, matched: false });
+    expect(await getDb().select().from(paymentEvents).where(eq(paymentEvents.eventId, createHash("sha256").update(noise).digest("hex")))).toHaveLength(0);
     expect(await handlePhonePeWebhook("not json", goodAuth)).toMatchObject({ ok: false });
   });
 

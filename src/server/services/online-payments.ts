@@ -373,21 +373,30 @@ export async function handlePhonePeWebhook(rawBody: string, authHeader: string |
     : merchantRefundId
       ? await db.select({ id: onlineOrders.id }).from(onlineOrders).where(eq(onlineOrders.refundMerchantId, merchantRefundId))
       : [];
-  await db
-    .insert(paymentEvents)
-    .values({
-      provider: "phonepe",
-      eventId: createHash("sha256").update(rawBody).digest("hex"),
-      eventType: event,
-      signatureValid: valid,
-      payload: body,
-      processedAt: new Date(),
-      result: o ? (valid ? "re-checked with the Status API" : "unverified: re-checked with the Status API") : "no matching order",
-    })
-    .onConflictDoNothing();
+  // Anything that doesn't carry the right Authorization header and doesn't name one of our orders is
+  // noise from the internet: answer, but don't store it.
+  if (valid || o) {
+    await db
+      .insert(paymentEvents)
+      .values({
+        provider: "phonepe",
+        eventId: createHash("sha256").update(rawBody).digest("hex"),
+        eventType: event.slice(0, 80),
+        signatureValid: valid,
+        payload: body,
+        processedAt: new Date(),
+        result: o ? (valid ? "re-checked with the Status API" : "unverified: checked only on the normal schedule") : "no matching order",
+      })
+      .onConflictDoNothing();
+  }
   if (!o) return { ok: true, matched: false };
-  if (event.startsWith("pg.refund")) await reconcileRefund(o.id);
-  else await reconcileOrder(o.id, { force: true });
+  // Order ids are guessable, so only a webhook with PhonePe's credentials can make us ask PhonePe
+  // right now; an unverified one just waits for the regular schedule.
+  if (event.startsWith("pg.refund")) {
+    if (valid) await reconcileRefund(o.id);
+  } else {
+    await reconcileOrder(o.id, { force: valid });
+  }
   return { ok: true, matched: true, verified: valid };
 }
 

@@ -163,12 +163,26 @@ export async function placeOnlineOrder(account: ShopAccount, input: { items: Ite
   return { orderNumber: placed.orderNumber, payUrl };
 }
 
+/**
+ * Asking PhonePe "right now" is allowed a generous number of times per customer; beyond that the page
+ * falls back to PhonePe's normal check schedule, so nobody can use this site to hammer PhonePe.
+ */
+async function mayCheckNow(account: ShopAccount) {
+  try {
+    await enforceRateLimit(`gateway-check:${account.id}`, 60, 10 * 60);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The customer is sent (back) to PhonePe: the open page, or a new attempt after a failed one. */
 export async function payMyOrder(account: ShopAccount, orderNumber: string, client: Client) {
   const db = getDb();
   const o = await findMyOrder(db, account, orderNumber);
   if (o.paymentMethod !== "phonepe") throw conflict("This order is paid by UPI QR on its page.");
-  await reconcileOrder(o.id, { force: true });
+  await enforceRateLimit(`gateway-pay:${account.id}`, 30, 10 * 60, "Too many attempts. Please wait a few minutes and try again.");
+  await reconcileOrder(o.id, { force: await mayCheckNow(account) });
   const cur = await findMyOrder(db, account, orderNumber);
   if (cur.status === "awaiting_payment" && cur.gatewayRedirectUrl && cur.gatewayExpiresAt && cur.gatewayExpiresAt.getTime() > Date.now() + 30_000) return { payUrl: cur.gatewayRedirectUrl };
   if (cur.status === "payment_failed") return { payUrl: await retryGatewayPayment(account.id, orderNumber, customerAuditActor(account, client)) };
@@ -189,7 +203,7 @@ export async function getMyOrder(account: ShopAccount, orderNumber: string, opts
   let order = await findMyOrder(db, account, orderNumber);
   if (order.paymentMethod === "phonepe") {
     // Back from PhonePe: ask straight away; otherwise follow PhonePe's check schedule.
-    await reconcileOrder(order.id, { force: opts.fromGateway });
+    await reconcileOrder(order.id, { force: opts.fromGateway && (await mayCheckNow(account)) });
     order = await findMyOrder(db, account, orderNumber);
   }
   const lines = await db.select().from(onlineOrderLines).where(eq(onlineOrderLines.orderId, order.id));
@@ -271,7 +285,7 @@ export async function submitUtr(account: ShopAccount, orderNumber: string, rawUt
 export async function cancelMyOrder(account: ShopAccount, orderNumber: string, client: Client) {
   const first = await findMyOrder(getDb(), account, orderNumber);
   // A PhonePe payment may have just gone through: ask before cancelling.
-  if (first.paymentMethod === "phonepe") await reconcileOrder(first.id, { force: true });
+  if (first.paymentMethod === "phonepe") await reconcileOrder(first.id, { force: await mayCheckNow(account) });
   return getDb().transaction(async (tx) => {
     const o = await findMyOrder(tx, account, orderNumber, true);
     if (o.status !== "awaiting_payment") throw conflict("Only an order that hasn't been paid can be cancelled here. Please contact the shop.");
