@@ -52,6 +52,10 @@ export default defineConfig({
       EMAIL_FROM: "OM ENTERPRISE <bills@example.test>",
       EMAIL_OUTBOX_DIR: "./storage/e2e-outbox",
       LOGIN_RATE_LIMIT_PER_15MIN: "10000",
+      // The server must not pick up real payment keys from a developer's .env: online payment stays on the UPI QR here.
+      RAZORPAY_KEY_ID: "",
+      RAZORPAY_KEY_SECRET: "",
+      RAZORPAY_WEBHOOK_SECRET: "",
     },
   },
 });

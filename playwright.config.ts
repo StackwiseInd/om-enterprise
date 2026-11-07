@@ -36,6 +36,10 @@ export default defineConfig({
       EMAIL_OUTBOX_DIR: "./storage/e2e-outbox",
       // Every test signs in from 127.0.0.1; keep the per-IP limit out of the way (account lockout still applies).
       LOGIN_RATE_LIMIT_PER_15MIN: "10000",
+      // The server must not pick up real payment keys from a developer's .env: online payment stays on the UPI QR here.
+      RAZORPAY_KEY_ID: "",
+      RAZORPAY_KEY_SECRET: "",
+      RAZORPAY_WEBHOOK_SECRET: "",
     },
   },
 });
