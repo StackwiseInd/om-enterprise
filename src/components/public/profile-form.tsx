@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { BadgeCheck, KeyRound, MailWarning, Save } from "lucide-react";
+import { BadgeCheck, KeyRound, MailWarning, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
@@ -47,7 +47,7 @@ function Section({ title, description, children }: { title: string; description?
 }
 
 /** My profile: details the shop prints on the customer's receipts and sees with their orders. */
-export function ProfileForm({ profile }: { profile: ProfileView }) {
+export function ProfileForm({ profile, deletionRequestedAt = null }: { profile: ProfileView; /** When the customer asked for the account to be deleted (still waiting), or null. */ deletionRequestedAt?: string | null }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(() => toForm(profile));
   // What is saved (tidied by the server: "98250 11111" comes back as 9825011111), to tell unsaved changes apart.
@@ -168,6 +168,7 @@ export function ProfileForm({ profile }: { profile: ProfileView }) {
 
       <EmailSection email={profile.email} verified={profile.emailVerified} />
       <PasswordSection />
+      <DeleteAccountSection requestedAt={deletionRequestedAt} />
     </div>
   );
 }
@@ -289,5 +290,86 @@ function PasswordSection() {
         </Button>
       </form>
     </Section>
+  );
+}
+
+/** Ask the shop to delete the account (the password confirms it is really the customer), or withdraw the request. */
+function DeleteAccountSection({ requestedAt }: { requestedAt: string | null }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setProblem(null);
+    try {
+      await apiFetch("/api/shop/account/delete-request", { body: { password, reason: reason.trim() || null } });
+      setOpen(false);
+      setPassword("");
+      router.refresh();
+    } catch (err) {
+      setProblem(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const withdraw = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await apiFetch("/api/shop/account/delete-request", { method: "DELETE" });
+      router.refresh();
+    } catch (err) {
+      setProblem(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="rounded-xl border border-red-200 bg-white" aria-labelledby="del-title">
+      <div className="border-b border-red-100 px-5 py-4">
+        <h2 id="del-title" className="font-semibold text-navy-950">Delete my account</h2>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-navy-500">
+          We erase your name, mobile number, email, address and password from your account and sign you out everywhere. Bills and records of orders you paid for stay with the shop, because tax law requires us to keep them.
+        </p>
+      </div>
+      <div className="space-y-3 px-5 py-5">
+        {problem && <Alert tone="danger">{problem}</Alert>}
+        {requestedAt ? (
+          <>
+            <Alert tone="warning" title="You asked for your account to be deleted">
+              On {new Date(requestedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}. The shop will complete it shortly, usually within 7 days. If an order is still waiting to be collected or refunded, they finish that first.
+            </Alert>
+            <Button variant="outline" loading={busy} onClick={withdraw}>
+              Keep my account (withdraw the request)
+            </Button>
+          </>
+        ) : !open ? (
+          <Button variant="outline" className="text-red-700" icon={<Trash2 className="h-4 w-4" />} onClick={() => setOpen(true)}>
+            Ask to delete my account
+          </Button>
+        ) : (
+          <form onSubmit={submit} noValidate className="space-y-4">
+            <Field label="Why are you leaving? (optional)" htmlFor="del-reason">
+              <Input id="del-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
+            </Field>
+            <Field label="Your password, to confirm it's you" htmlFor="del-pw">
+              <Input id="del-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="danger" loading={busy} disabled={!password} icon={<Trash2 className="h-4 w-4" />}>
+                Ask to delete my account
+              </Button>
+              <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </section>
   );
 }

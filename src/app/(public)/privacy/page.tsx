@@ -104,7 +104,7 @@ const sections = (b: Business) => [
     title: "How long we keep it",
     body: (
       <p>
-        Orders, payments and bills are kept for as long as tax and accounting law requires us to keep them (under GST, generally six years after the year they relate to). Enquiries you send without ordering are kept while they are useful for following up, and are deleted when you ask. Your account stays until you ask us to close it; we then remove your sign-in details and keep only the order records the law requires. Security records are kept for as long as is needed to investigate misuse.
+        Orders, payments and bills are kept for as long as tax and accounting law requires us to keep them (under GST, generally six years after the year they relate to). Enquiries you send without ordering are kept while they are useful for following up, and are deleted when you ask. Your account stays until you ask us to delete it: use <strong>Delete my account</strong> on My profile (or contact us). We then erase your name, mobile number, email, address and password from the account and keep only the order records the law requires. If an account is closed for fraud, we keep its mobile number and email on a blocked list so they can&apos;t be used to sign up again. Security records are kept for as long as is needed to investigate misuse.
       </p>
     ),
   },

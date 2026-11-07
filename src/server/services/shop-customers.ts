@@ -1,7 +1,7 @@
 import "server-only";
-import { and, desc, eq, ilike, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
-import { auditLogs, onlineOrders, shopAccounts, shopSessions } from "@/server/db/schema";
+import { auditLogs, onlineOrders, shopAccounts, shopBlocklist, shopDeletionRequests, shopSessions } from "@/server/db/schema";
 import { audit } from "@/server/audit";
 import { auditActorOf, requirePermission, type Actor } from "@/server/auth/actor";
 import { conflict, invalid, notFound } from "@/server/errors";
@@ -15,8 +15,8 @@ import { formatPhone } from "@/lib/india";
  * account or set a new password for a customer who asks (the customer is signed out everywhere).
  */
 
-export type CustomerFilter = "all" | "verified" | "unverified" | "disabled" | "buyers";
-export const CUSTOMER_FILTERS: CustomerFilter[] = ["all", "verified", "unverified", "disabled", "buyers"];
+export type CustomerFilter = "all" | "verified" | "unverified" | "disabled" | "frozen" | "banned" | "deleted" | "buyers";
+export const CUSTOMER_FILTERS: CustomerFilter[] = ["all", "verified", "unverified", "frozen", "banned", "deleted", "disabled", "buyers"];
 
 // Per customer, from their online orders: how many, how many are paid, what they have spent, when they last ordered.
 // Table names are written out (not column objects) because a single-table query leaves column names unqualified,
@@ -34,7 +34,10 @@ function where(filter: CustomerFilter, q?: string): SQL | undefined {
   const conds: (SQL | undefined)[] = [];
   if (filter === "verified") conds.push(isNotNull(shopAccounts.emailVerifiedAt));
   if (filter === "unverified") conds.push(isNull(shopAccounts.emailVerifiedAt));
-  if (filter === "disabled") conds.push(eq(shopAccounts.isActive, false));
+  // "All" leaves deleted accounts out; they have their own filter.
+  if (filter === "disabled") conds.push(inArray(shopAccounts.status, ["frozen", "banned"]));
+  else if (filter === "frozen" || filter === "banned" || filter === "deleted") conds.push(eq(shopAccounts.status, filter));
+  else conds.push(ne(shopAccounts.status, "deleted"));
   if (filter === "buyers") conds.push(hasPaid);
   const term = q?.trim().slice(0, 60);
   if (term) {
@@ -70,6 +73,7 @@ export async function listShopCustomers(actor: Actor, opts: { q?: string; filter
       email: shopAccounts.email,
       emailVerifiedAt: shopAccounts.emailVerifiedAt,
       isActive: shopAccounts.isActive,
+      status: shopAccounts.status,
       createdAt: shopAccounts.createdAt,
       lastLoginAt: shopAccounts.lastLoginAt,
       businessName: shopAccounts.businessName,
@@ -93,11 +97,14 @@ export async function shopCustomerStats(actor: Actor) {
   requirePermission(actor, "customers.view");
   const [s] = await getDb()
     .select({
-      total: sql<number>`count(*)::int`,
+      total: sql<number>`count(*) filter (where ${shopAccounts.status} <> 'deleted')::int`,
       verified: sql<number>`count(*) filter (where ${shopAccounts.emailVerifiedAt} is not null)::int`,
-      disabled: sql<number>`count(*) filter (where ${shopAccounts.isActive} = false)::int`,
-      newThisWeek: sql<number>`count(*) filter (where ${shopAccounts.createdAt} > now() - interval '7 days')::int`,
-      buyers: sql<number>`count(*) filter (where ${hasPaid})::int`,
+      disabled: sql<number>`count(*) filter (where ${shopAccounts.status} in ('frozen','banned'))::int`,
+      frozen: sql<number>`count(*) filter (where ${shopAccounts.status} = 'frozen')::int`,
+      banned: sql<number>`count(*) filter (where ${shopAccounts.status} = 'banned')::int`,
+      deleted: sql<number>`count(*) filter (where ${shopAccounts.status} = 'deleted')::int`,
+      newThisWeek: sql<number>`count(*) filter (where ${shopAccounts.createdAt} > now() - interval '7 days' and ${shopAccounts.status} <> 'deleted')::int`,
+      buyers: sql<number>`count(*) filter (where ${hasPaid} and ${shopAccounts.status} <> 'deleted')::int`,
     })
     .from(shopAccounts);
   const [t] = await getDb().select({ spent: sql<string>`coalesce(sum(total), 0)::text` }).from(onlineOrders).where(sql`status in ${PAID} and deleted_at is null`);
@@ -110,6 +117,7 @@ export async function latestShopCustomers(actor: Actor, limit = 5) {
   return getDb()
     .select({ id: shopAccounts.id, name: shopAccounts.name, mobile: shopAccounts.mobile, email: shopAccounts.email, emailVerifiedAt: shopAccounts.emailVerifiedAt, createdAt: shopAccounts.createdAt })
     .from(shopAccounts)
+    .where(ne(shopAccounts.status, "deleted"))
     .orderBy(desc(shopAccounts.createdAt))
     .limit(limit);
 }
@@ -126,6 +134,10 @@ export async function getShopCustomer(actor: Actor, id: string) {
       email: shopAccounts.email,
       emailVerifiedAt: shopAccounts.emailVerifiedAt,
       isActive: shopAccounts.isActive,
+      status: shopAccounts.status,
+      statusReason: shopAccounts.statusReason,
+      statusChangedAt: shopAccounts.statusChangedAt,
+      deletedAt: shopAccounts.deletedAt,
       failedLoginCount: shopAccounts.failedLoginCount,
       lockedUntil: shopAccounts.lockedUntil,
       lastLoginAt: shopAccounts.lastLoginAt,
@@ -173,25 +185,48 @@ export async function getShopCustomer(actor: Actor, id: string) {
     .where(and(eq(auditLogs.entityType, "shop_account"), eq(auditLogs.entityId, id)))
     .orderBy(desc(auditLogs.at))
     .limit(60);
-  return { customer, orders, stats, history };
+  const [deletionRequest] = await db
+    .select({ id: shopDeletionRequests.id, requestedAt: shopDeletionRequests.requestedAt, reason: shopDeletionRequests.reason })
+    .from(shopDeletionRequests)
+    .where(and(eq(shopDeletionRequests.accountId, id), eq(shopDeletionRequests.status, "pending")));
+  // Blocked entries made from this account, or matching its mobile / email now.
+  const blocks = await db
+    .select({ id: shopBlocklist.id, kind: shopBlocklist.kind, value: shopBlocklist.value, reason: shopBlocklist.reason, createdAt: shopBlocklist.createdAt, hits: shopBlocklist.hits })
+    .from(shopBlocklist)
+    .where(
+      and(
+        isNull(shopBlocklist.removedAt),
+        or(
+          eq(shopBlocklist.accountId, id),
+          and(eq(shopBlocklist.kind, "mobile"), inArray(shopBlocklist.value, [customer.mobile, customer.altMobile ?? ""])),
+          customer.email ? and(eq(shopBlocklist.kind, "email"), eq(shopBlocklist.value, customer.email.toLowerCase())) : undefined,
+        ),
+      ),
+    );
+  return { customer, orders, stats, history, deletionRequest: deletionRequest ?? null, blocks };
 }
 
-/** Disable a customer's account (they are signed out everywhere and can't sign in) or switch it back on. */
+/** Freeze a customer's account (on hold: signed out everywhere, can't sign in or order) or unfreeze it. */
 export async function setShopCustomerActive(actor: Actor, id: string, input: { active: boolean; reason?: string | null }) {
   requirePermission(actor, "customers.edit");
   const reason = input.reason?.trim().slice(0, 300) || null;
-  if (!input.active && !reason) throw invalid("Say why the account is disabled");
+  if (!input.active && !reason) throw invalid("Say why the account is frozen");
   await getDb().transaction(async (tx) => {
     const [a] = await tx.select().from(shopAccounts).where(eq(shopAccounts.id, id)).for("update");
     if (!a) throw notFound("Customer");
-    if (a.isActive === input.active) throw conflict(input.active ? "This account is already active." : "This account is already disabled.");
-    await tx.update(shopAccounts).set({ isActive: input.active }).where(eq(shopAccounts.id, id));
+    if (a.status === "deleted") throw conflict("This account has been deleted.");
+    if (a.status === "banned") throw conflict("This account is banned. Lift the ban instead (needs the ban permission).");
+    if ((a.status === "active") === input.active) throw conflict(input.active ? "This account is already active." : "This account is already frozen.");
+    await tx
+      .update(shopAccounts)
+      .set({ status: input.active ? "active" : "frozen", isActive: input.active, statusReason: reason, statusChangedAt: new Date(), statusChangedBy: actor.id })
+      .where(eq(shopAccounts.id, id));
     if (!input.active) await tx.delete(shopSessions).where(eq(shopSessions.accountId, id));
     await audit(tx, auditActorOf(actor), {
       action: input.active ? "shop.account_enabled" : "shop.account_disabled",
       entityType: "shop_account",
       entityId: id,
-      summary: `${a.name} (${formatPhone(a.mobile)}) ${input.active ? "re-enabled" : "disabled"} by staff${reason ? `: ${reason}` : ""}`,
+      summary: `${a.name} (${formatPhone(a.mobile)}) ${input.active ? "unfrozen" : "frozen"} by staff${reason ? `: ${reason}` : ""}`,
     });
   });
 }
@@ -203,8 +238,9 @@ export async function resetShopCustomerPassword(actor: Actor, id: string, passwo
   if (password.length > 200) throw invalid("That password is too long");
   const passwordHash = await hashPassword(password);
   await getDb().transaction(async (tx) => {
-    const [a] = await tx.select({ id: shopAccounts.id, name: shopAccounts.name, mobile: shopAccounts.mobile }).from(shopAccounts).where(eq(shopAccounts.id, id)).for("update");
+    const [a] = await tx.select({ id: shopAccounts.id, name: shopAccounts.name, mobile: shopAccounts.mobile, status: shopAccounts.status }).from(shopAccounts).where(eq(shopAccounts.id, id)).for("update");
     if (!a) throw notFound("Customer");
+    if (a.status === "deleted") throw conflict("This account has been deleted.");
     await tx.update(shopAccounts).set({ passwordHash, failedLoginCount: 0, lockedUntil: null }).where(eq(shopAccounts.id, id));
     await tx.delete(shopSessions).where(eq(shopSessions.accountId, id));
     // The password itself is never written anywhere.

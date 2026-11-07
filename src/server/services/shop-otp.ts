@@ -1,4 +1,5 @@
 import "server-only";
+import { assertNotBlocked } from "@/server/services/shop-blocklist";
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
@@ -49,6 +50,9 @@ export async function sendEmailCode(input: { email: string; purpose: OtpPurpose;
   await enforceRateLimit(`otp-ip:${ipKey}`, 15, 60 * 60, "Too many codes asked for from this device. Please try again in an hour.");
   await enforceRateLimit(`otp-email:${email}`, 5, 60 * 60, "Too many codes for this email address. Please try again in an hour.");
   await enforceRateLimit("otp-day", 400, 24 * 60 * 60, "We can't send more codes today. Please try again tomorrow, or call the shop.");
+
+  // Addresses blocked for fraud get no codes.
+  await assertNotBlocked({ email: [email] }, "to get an email code", client);
 
   // Another account already proved this address: one account per address.
   const holders = await db.select({ id: shopAccounts.id, verified: shopAccounts.emailVerifiedAt }).from(shopAccounts).where(sql`lower(${shopAccounts.email}) = ${email}`);

@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { enforceRateLimit } from "@/server/rate-limit";
 import { hashToken } from "@/server/services/auth";
 import { customerAuditActor, SHOP_PASSWORD_MIN, type ShopAccount } from "@/server/services/shop-auth";
+import { assertNotBlocked } from "@/server/services/shop-blocklist";
 import { isValidPincode, normalizeMobile, STATES, validateGstin } from "@/lib/india";
 import { profileAddressLines, type ShopProfileFields } from "@/lib/shop-profile";
 
@@ -122,6 +123,9 @@ export async function updateMyProfile(account: ShopAccount, input: ProfileInput,
   await enforceRateLimit(`shop-profile:${account.id}`, 30, 60 * 60, "Too many changes in an hour. Please wait a little.");
   const before = await getMyProfile(account);
   const next = normalizeProfile(input, account.mobile);
+  if (next.altMobile) await assertNotBlocked({ mobile: [next.altMobile] }, "to be added to a profile", client).catch((e) => {
+    throw invalid("This phone number can't be used. Please give a different one, or contact the shop.", { field: "altMobile", ...(e as { details?: object }).details });
+  });
   const pick = (p: typeof next | ShopProfile) => ({ name: p.name, businessName: p.businessName, gstin: p.gstin, altMobile: p.altMobile, addressLine1: p.addressLine1, addressLine2: p.addressLine2, landmark: p.landmark, city: p.city, state: p.state, pincode: p.pincode });
   const changes = diff(pick(before), pick(next));
   if (!Object.keys(changes).length) return before;

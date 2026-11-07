@@ -9,8 +9,11 @@ import { whatsappLink, formatPhone } from "@/lib/india";
 import { formatINR } from "@/lib/money";
 import { ONLINE_ORDER_STATUS } from "@/lib/online-order-status";
 import { profileAddressLines } from "@/lib/shop-profile";
+import { SHOP_ACCOUNT_STATUS } from "@/lib/shop-account-status";
+import { deletePhrase } from "@/lib/delete-phrase";
+import { deleteBlockedFor } from "@/server/services/shop-moderation";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
-import { EmptyState, PageHeader, PageSkeleton } from "@/components/ui/page";
+import { Alert, EmptyState, PageHeader, PageSkeleton } from "@/components/ui/page";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { DateTime, Money } from "@/components/ui/money";
@@ -42,7 +45,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 async function Detail({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requirePageActor("customers.view");
   const { id } = await params;
-  const { customer: c, orders, stats, history } = await loadOr404(getShopCustomer(actor, id));
+  const { customer: c, orders, stats, history, deletionRequest, blocks } = await loadOr404(getShopCustomer(actor, id));
+  const canBan = can(actor, "customers.ban");
+  const deleteBlocked = canBan && c.status !== "deleted" ? await deleteBlockedFor(c.id) : null;
+  const st = SHOP_ACCOUNT_STATUS[c.status];
+  const deleted = c.status === "deleted";
   const locked = c.lockedUntil && c.lockedUntil > new Date();
 
   return (
@@ -54,7 +61,8 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
           <span className="flex flex-wrap items-center gap-2">
             {c.name}
             <TitleStamps>
-              <Badge tone={c.isActive ? "green" : "red"}>{c.isActive ? "Active" : "Disabled"}</Badge>
+              <Badge tone={st.tone}>{st.label}</Badge>
+              {deletionRequest && <Badge tone="amber">Asked to delete</Badge>}
               {c.emailVerifiedAt ? <Badge tone="green"><BadgeCheck className="h-3 w-3" /> Email verified</Badge> : <Badge tone="amber"><MailWarning className="h-3 w-3" /> Email not verified</Badge>}
               {locked && <Badge tone="amber">Locked after wrong passwords</Badge>}
             </TitleStamps>
@@ -63,6 +71,8 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
         description={`Joined ${c.createdAt.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "long", year: "numeric" })}`}
         actions={
           <>
+            {!deleted && (
+            <>
             <a href={`tel:+91${c.mobile}`} className={buttonClass("outline")}>
               <Phone className="h-4 w-4" /> Call
             </a>
@@ -74,11 +84,49 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                 <Mail className="h-4 w-4" /> Email
               </a>
             )}
-            {can(actor, "customers.edit") && <WebsiteCustomerActions id={c.id} name={c.name} active={c.isActive} />}
+            </>
+            )}
+            {can(actor, "customers.edit") && (
+              <WebsiteCustomerActions
+                id={c.id}
+                name={c.name}
+                status={c.status}
+                canBan={canBan}
+                phrase={deletePhrase(actor.username)}
+                hasEmail={!!c.email}
+                hasAltMobile={!!c.altMobile}
+                deleteBlocked={deleteBlocked}
+                requestId={deletionRequest?.id ?? null}
+              />
+            )}
           </>
         }
       />
 
+      {c.status !== "active" && (
+        <Alert tone={c.status === "banned" ? "danger" : c.status === "frozen" ? "warning" : "info"} title={`${st.label}${c.statusChangedAt ? ` · ${c.statusChangedAt.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium" })}` : ""}`}>
+          {st.means}
+          {c.statusReason ? <> Reason: {c.statusReason}</> : null}
+        </Alert>
+      )}
+      {deletionRequest && (
+        <Alert tone="warning" title="The customer asked for this account to be deleted">
+          Asked <DateTime value={deletionRequest.requestedAt} />
+          {deletionRequest.reason ? <>: “{deletionRequest.reason}”</> : null}. {canBan ? "Use Delete account above to complete it, or turn it down on the " : "Someone with the ban permission completes it on the "}
+          <Link href="/admin/delete-request/online-orders" className="font-semibold underline underline-offset-2">deletion requests page</Link>.
+        </Alert>
+      )}
+      {blocks.length > 0 && (
+        <Alert tone="danger" title="Blocked from the website">
+          {blocks.map((b) => (
+            <span key={b.id} className="block">
+              {b.kind === "mobile" ? "Mobile" : "Email"} <strong className="tabular">{b.value}</strong>, since <DateTime value={b.createdAt} dateOnly />: {b.reason}
+              {b.hits ? ` · tried ${b.hits} time${b.hits === 1 ? "" : "s"} since` : ""}
+            </span>
+          ))}
+          <Link href="/admin/blocklist" className="mt-1 inline-block font-semibold underline underline-offset-2">All blocked numbers &amp; emails</Link>
+        </Alert>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Stat label="Orders" value={stats.orders.toLocaleString("en-IN")} hint={stats.lastOrderAt ? <>Last <DateTime value={stats.lastOrderAt} dateOnly /></> : "No orders yet"} />
         <Stat label="Paid orders" value={stats.paidOrders.toLocaleString("en-IN")} tone="green" hint={`${stats.collected} collected from the shop`} />
@@ -93,7 +141,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
             <CardBody>
               <dl>
                 <Row label="Name">{c.name}</Row>
-                <Row label="Mobile"><a href={`tel:+91${c.mobile}`} className={codeLink}>{formatPhone(c.mobile)}</a></Row>
+                <Row label="Mobile">{deleted ? <span className="text-navy-400">Erased</span> : <a href={`tel:+91${c.mobile}`} className={codeLink}>{formatPhone(c.mobile)}</a>}</Row>
                 <Row label="Email">
                   {c.email ? (
                     <>

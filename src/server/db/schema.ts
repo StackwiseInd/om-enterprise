@@ -1153,14 +1153,84 @@ export const shopAccounts = pgTable(
     state: text("state"),
     pincode: text("pincode"),
     profileUpdatedAt: ts("profile_updated_at"),
+    /** Can sign in and order. False whenever `status` is not "active". */
     isActive: boolean("is_active").notNull().default(true),
+    /** active · frozen (on hold, reversible) · banned (fraud; its mobile/email are blocked) · deleted (personal data erased). */
+    status: text("status").$type<ShopAccountStatus>().notNull().default("active"),
+    statusReason: text("status_reason"),
+    statusChangedAt: ts("status_changed_at"),
+    statusChangedBy: uuid("status_changed_by").references(() => users.id),
+    deletedAt: ts("deleted_at"),
     failedLoginCount: integer("failed_login_count").notNull().default(0),
     lockedUntil: ts("locked_until"),
     lastLoginAt: ts("last_login_at"),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
-  // One account per verified email address.
-  (t) => [uniqueIndex("shop_accounts_email_verified_uq").on(sql`lower(${t.email})`).where(sql`${t.emailVerifiedAt} is not null`)],
+  (t) => [
+    // One account per verified email address.
+    uniqueIndex("shop_accounts_email_verified_uq").on(sql`lower(${t.email})`).where(sql`${t.emailVerifiedAt} is not null`),
+    check("shop_accounts_status", sql`${t.status} in ('active','frozen','banned','deleted')`),
+    check("shop_accounts_active_status", sql`${t.isActive} = (${t.status} = 'active')`),
+  ],
+);
+
+export type ShopAccountStatus = "active" | "frozen" | "banned" | "deleted";
+
+/**
+ * Mobile numbers and email addresses that may never sign up or sign in on the website (fraud). Values are
+ * normalised: 10-digit mobile, lower-case email. Removing an entry keeps the row (who removed it, and why).
+ */
+export const shopBlocklist = pgTable(
+  "shop_blocklist",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").$type<"mobile" | "email">().notNull(),
+    value: text("value").notNull(),
+    reason: text("reason").notNull(),
+    /** The account it was blocked from, when there was one. */
+    accountId: uuid("account_id").references(() => shopAccounts.id),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    /** Times someone tried to sign up / sign in / get a code with it since it was blocked. */
+    hits: integer("hits").notNull().default(0),
+    lastHitAt: ts("last_hit_at"),
+    removedAt: ts("removed_at"),
+    removedBy: uuid("removed_by").references(() => users.id),
+    removeReason: text("remove_reason"),
+  },
+  (t) => [
+    check("shop_blocklist_kind", sql`${t.kind} in ('mobile','email')`),
+    uniqueIndex("shop_blocklist_active_uq").on(t.kind, t.value).where(sql`${t.removedAt} is null`),
+  ],
+);
+
+export type DeletionRequestStatus = "pending" | "completed" | "rejected" | "withdrawn";
+
+/** A customer asks for their website account to be deleted; staff complete or refuse it. */
+export const shopDeletionRequests = pgTable(
+  "shop_deletion_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => shopAccounts.id),
+    /** Who asked, as they were then (masked once the account is deleted). */
+    name: text("name").notNull(),
+    mobile: text("mobile").notNull(),
+    email: text("email"),
+    reason: text("reason"),
+    status: text("status").$type<DeletionRequestStatus>().notNull().default("pending"),
+    requestedAt: ts("requested_at").notNull().defaultNow(),
+    decidedAt: ts("decided_at"),
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decisionNote: text("decision_note"),
+    ipHash: text("ip_hash"),
+  },
+  (t) => [
+    check("shop_deletion_status", sql`${t.status} in ('pending','completed','rejected','withdrawn')`),
+    uniqueIndex("shop_deletion_pending_uq").on(t.accountId).where(sql`${t.status} = 'pending'`),
+    index("shop_deletion_status_idx").on(t.status, t.requestedAt),
+  ],
 );
 
 /**

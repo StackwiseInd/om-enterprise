@@ -114,15 +114,16 @@ describe("staff view of website customers", () => {
 
     await setShopCustomerActive(sales, c.account.id, { active: false, reason: "Chargeback dispute" });
     expect(await shopAccountFromToken(c.token)).toBeNull(); // signed out everywhere
-    expect((await rejects(shopSignIn({ mobile: c.mobile, password: "first-pass-123" }, ip()))).message).toBe("Wrong mobile number or password");
+    expect((await rejects(shopSignIn({ mobile: c.mobile, password: "first-pass-123" }, ip()))).message).toContain("on hold");
     expect((await listShopCustomers(sales, { filter: "disabled", q: c.mobile })).items.map((r) => r.id)).toEqual([c.account.id]);
+    expect((await listShopCustomers(sales, { filter: "frozen", q: c.mobile })).items.map((r) => r.id)).toEqual([c.account.id]);
     expect((await rejects(setShopCustomerActive(sales, c.account.id, { active: false, reason: "again" }))).code).toBe("CONFLICT");
 
     await setShopCustomerActive(admin, c.account.id, { active: true });
     expect((await shopSignIn({ mobile: c.mobile, password: "first-pass-123" }, ip())).account.id).toBe(c.account.id);
     const h = (await getShopCustomer(sales, c.account.id)).history.map((x) => x.summary).join("\n");
-    expect(h).toContain("disabled by staff: Chargeback dispute");
-    expect(h).toContain("re-enabled by staff");
+    expect(h).toContain("frozen by staff: Chargeback dispute");
+    expect(h).toContain("unfrozen by staff");
   });
 
   it("sets a new password for a customer who asked: old one stops working, signed out everywhere, nothing readable is stored", async () => {

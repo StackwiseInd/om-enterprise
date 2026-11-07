@@ -2,10 +2,10 @@ import { Suspense } from "react";
 import { Sidebar, SidebarSkeleton } from "@/components/staff/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 
-export const metadata = { title: { default: "Logs", template: "%s · OM ENTERPRISE" }, robots: { index: false } };
+export const metadata = { title: { default: "Admin", template: "%s · OM ENTERPRISE" }, robots: { index: false } };
 
-/** Admin logs use the same frame as the dashboard: sidebar on the left, the page on the right. */
-export default function LogsLayout({ children }: LayoutProps<"/admin/logs">) {
+/** Admin pages (logs, deletion requests, blocklist) use the same frame as the dashboard: sidebar on the left, the page on the right. */
+export default function AdminStaffLayout({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <div className="flex min-h-dvh flex-1 flex-col bg-paper/50 lg:flex-row">

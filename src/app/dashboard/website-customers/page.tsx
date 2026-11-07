@@ -1,5 +1,8 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { Ban, UserX } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
+import { SHOP_ACCOUNT_STATUS } from "@/lib/shop-account-status";
 import { BadgeCheck, MailWarning } from "lucide-react";
 import { requirePageActor } from "@/server/auth/session";
 import { can } from "@/server/auth/actor";
@@ -43,11 +46,18 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
         title="Online customers"
         description="People who created an account on the website. Passwords are stored scrambled and can't be seen by anyone; if a customer forgets theirs, open their record and set a new one."
         actions={
-          can(actor, "reports.export") ? (
+          <>
+            <Link href="/admin/delete-request/online-orders" className={buttonClass("outline")}>
+              <UserX className="h-4 w-4" /> Deletion requests
+            </Link>
+            <Link href="/admin/blocklist" className={buttonClass("outline")}>
+              <Ban className="h-4 w-4" /> Blocked numbers &amp; emails
+            </Link>
+          {can(actor, "reports.export") ? (
             <CsvExportButton
               rows={data.items.map((c) => ({
                 name: c.name,
-                mobile: c.mobile,
+                mobile: c.status === "deleted" ? "" : c.mobile,
                 email: c.email ?? "",
                 email_verified: c.emailVerifiedAt ? "yes" : "no",
                 orders: c.orders,
@@ -55,12 +65,13 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
                 spent: c.spent,
                 joined: c.createdAt.toISOString(),
                 last_sign_in: c.lastLoginAt?.toISOString() ?? "",
-                status: c.isActive ? "active" : "disabled",
+                status: c.status,
               }))}
               filename={`om-online-customers-page-${page}.csv`}
               label="Export page (CSV)"
             />
-          ) : null
+          ) : null}
+          </>
         }
       />
       <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
@@ -68,7 +79,7 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
         <Stat label="Email verified" value={stats.verified.toLocaleString("en-IN")} tone="green" hint={stats.total ? `${Math.round((stats.verified / stats.total) * 100)}% of customers` : "—"} />
         <Stat label="Have paid" value={stats.buyers.toLocaleString("en-IN")} hint="At least one paid order" />
         <Stat label="Spent online" value={formatINR(stats.spent)} tone="gold" hint="Paid orders, incl. GST" />
-        <Stat label="Disabled" value={stats.disabled.toLocaleString("en-IN")} tone={stats.disabled ? "red" : "navy"} hint="Can't sign in" />
+        <Stat label="Frozen · banned" value={`${stats.frozen} · ${stats.banned}`} tone={stats.disabled ? "red" : "navy"} hint={`Can't sign in${stats.deleted ? ` · ${stats.deleted} deleted` : ""}`} />
       </div>
       <FilterBar
         fields={[
@@ -82,7 +93,9 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
               { value: "buyers", label: "Have paid" },
               { value: "verified", label: "Email verified" },
               { value: "unverified", label: "Email not verified" },
-              { value: "disabled", label: "Disabled" },
+              { value: "frozen", label: "Frozen" },
+              { value: "banned", label: "Banned" },
+              { value: "deleted", label: "Deleted accounts" },
             ],
           },
         ]}
@@ -116,9 +129,13 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
                     <div className="mt-0.5 text-xs text-navy-500">{c.lastLoginAt ? <>Last sign-in <DateTime value={c.lastLoginAt} dateOnly /></> : "Never signed in again"}</div>
                   </td>
                   <td data-label="Mobile" className={tdCode}>
-                    <a href={`tel:+91${c.mobile}`} className="underline-offset-[3px] hover:underline">
-                      {formatPhone(c.mobile)}
-                    </a>
+                    {c.status === "deleted" ? (
+                      <span className="font-sans text-navy-400">Erased</span>
+                    ) : (
+                      <a href={`tel:+91${c.mobile}`} className="underline-offset-[3px] hover:underline">
+                        {formatPhone(c.mobile)}
+                      </a>
+                    )}
                   </td>
                   <td data-label="Email" className={tdText}>
                     {c.email ? (
@@ -146,7 +163,7 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
                   <td data-label="Last order" className={tdMuted}>{c.lastOrderAt ? <DateTime value={c.lastOrderAt} dateOnly /> : <span className="text-navy-300">—</span>}</td>
                   <td data-label="Joined" className={tdMuted}><DateTime value={c.createdAt} dateOnly /></td>
                   <td data-label="Status" className={tdText}>
-                    <Badge tone={c.isActive ? "green" : "red"}>{c.isActive ? "Active" : "Disabled"}</Badge>
+                    <Badge tone={SHOP_ACCOUNT_STATUS[c.status].tone}>{SHOP_ACCOUNT_STATUS[c.status].label}</Badge>
                   </td>
                 </tr>
               ))}

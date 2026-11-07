@@ -7,6 +7,7 @@ import { AccountTabs } from "@/components/public/account-tabs";
 import { ProfileForm } from "@/components/public/profile-form";
 import { getShopAccount } from "@/server/auth/shop-session";
 import { getMyProfile } from "@/server/services/shop-profile";
+import { myDeletionRequest } from "@/server/services/shop-moderation";
 
 export const metadata: Metadata = { title: "My profile", robots: { index: false } };
 
@@ -26,11 +27,12 @@ export default function MyProfilePage() {
 async function Content() {
   const account = await getShopAccount();
   if (!account) redirect("/sign-in?next=/my-profile");
-  const p = await getMyProfile(account);
+  const [p, deletion] = await Promise.all([getMyProfile(account), myDeletionRequest(account)]);
   return (
     <div className="mx-auto max-w-3xl">
       <AccountTabs active="profile" name={account.name} mobile={account.mobile} />
       <ProfileForm
+        deletionRequestedAt={deletion?.requestedAt.toISOString() ?? null}
         profile={{
           name: p.name,
           mobile: p.mobile,

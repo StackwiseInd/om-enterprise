@@ -9,6 +9,7 @@ import { getDummyHash, hashPassword, verifyPassword } from "@/server/auth/passwo
 import { enforceRateLimit, hashIp } from "@/server/rate-limit";
 import { hashToken } from "@/server/services/auth";
 import { consumeEmailCode, emailVerificationRequired } from "@/server/services/shop-otp";
+import { assertNotBlocked, BLOCKED_SIGN_IN } from "@/server/services/shop-blocklist";
 import { formatPhone, isValidEmail, normalizeMobile } from "@/lib/india";
 
 /**
@@ -60,6 +61,8 @@ export async function shopSignUp(input: { name: string; mobile: string; password
   if (verify && !email) throw invalid("Please enter your email address. We send a code to it to verify your account.");
   if (input.password.length < SHOP_PASSWORD_MIN) throw invalid(`Choose a password of at least ${SHOP_PASSWORD_MIN} characters`);
   if (input.password.length > 200) throw invalid("That password is too long");
+  // Numbers and addresses blocked for fraud can never open an account.
+  await assertNotBlocked({ mobile: [mobile], email: [email] }, "to sign up", client);
 
   const db = getDb();
   const [existing] = await db.select({ id: shopAccounts.id }).from(shopAccounts).where(eq(shopAccounts.mobile, mobile));
@@ -85,9 +88,10 @@ export async function shopSignIn(input: { mobile: string; password: string }, cl
   const [a] = mobile ? await db.select().from(shopAccounts).where(eq(shopAccounts.mobile, mobile)) : [];
   if (!a) {
     await verifyPassword(input.password, await getDummyHash()); // same time as a real check
+    if (mobile) await assertNotBlocked({ mobile: [mobile] }, "to sign in", client, BLOCKED_SIGN_IN);
     throw new AppError("UNAUTHENTICATED", GENERIC_ERROR);
   }
-  if (!a.isActive) throw new AppError("UNAUTHENTICATED", GENERIC_ERROR);
+  if (a.status === "deleted") throw new AppError("UNAUTHENTICATED", GENERIC_ERROR);
   if (a.lockedUntil && a.lockedUntil > new Date()) throw new AppError("RATE_LIMITED", `Too many wrong passwords. Try again after ${LOCK_MINUTES} minutes, or ask the shop to reset it.`);
   if (!(await verifyPassword(input.password, a.passwordHash))) {
     const failed = a.failedLoginCount + 1;
@@ -106,6 +110,10 @@ export async function shopSignIn(input: { mobile: string; password: string }, cl
     });
     throw new AppError("UNAUTHENTICATED", GENERIC_ERROR);
   }
+  // Only someone with the right password learns why an account can't be used.
+  await assertNotBlocked({ mobile: [a.mobile], email: [a.emailVerifiedAt ? a.email : null] }, "to sign in", client, BLOCKED_SIGN_IN);
+  if (a.status === "banned") throw new AppError("FORBIDDEN", BLOCKED_SIGN_IN, { blocked: true });
+  if (a.status === "frozen") throw new AppError("FORBIDDEN", "Your account is on hold. Please contact the shop.", { frozen: true });
   await db.update(shopAccounts).set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() }).where(eq(shopAccounts.id, a.id));
   const session = await startSession(a.id);
   return { ...session, account: toAccount(a) };
@@ -133,6 +141,7 @@ function toAccount(a: typeof shopAccounts.$inferSelect): ShopAccount {
 
 /** A signed-in customer proves (or changes to) an email address with the code emailed to it. */
 export async function verifyAccountEmail(account: ShopAccount, input: { email: string; code: string }, client: Client) {
+  await assertNotBlocked({ email: [input.email] }, "to be added to an account", client, BLOCKED_SIGN_IN);
   const email = await consumeEmailCode({ email: input.email, purpose: "verify", code: input.code, accountId: account.id });
   const db = getDb();
   await db.transaction(async (tx) => {

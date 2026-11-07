@@ -51,6 +51,7 @@ export const PERMISSIONS = {
   // Customers & website orders
   "customers.view": "View customer records",
   "customers.edit": "Create and edit customer records",
+  "customers.ban": "Ban, delete and block website customers (mobile numbers and emails)",
   "orders.view": "View website enquiries and order requests",
   "orders.manage": "Update / convert website orders",
 
@@ -141,6 +142,7 @@ export const DEFAULT_ROLES: {
       "documents.share",
       "customers.view",
       "customers.edit",
+      "customers.ban",
       "orders.view",
       "orders.manage",
       "reports.view",
