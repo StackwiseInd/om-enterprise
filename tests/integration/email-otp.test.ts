@@ -176,9 +176,13 @@ describe("email verification before paying", () => {
     const done = await verifyAccountEmail(a, { email: e, code: await codeIn(e) }, ip());
     expect(done).toMatchObject({ email: e });
     expect(done.emailVerifiedAt).toBeInstanceOf(Date);
-    // Now the order goes through to the next rule (no online payment is set up in this test).
-    const next = await rejects(placeOnlineOrder(done, { items: [{ variantId: item, quantity: "1" }] }, ip()));
-    expect(next.message).not.toContain("verify your email");
+    // Now the email rule no longer stops the order (it either goes through, or stops at a later rule,
+    // depending on whether another test file switched UPI payments on in the shared database).
+    const next = await placeOnlineOrder(done, { items: [{ variantId: item, quantity: "1" }] }, ip()).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(next?.message ?? "").not.toContain("verify your email");
   });
 
   it("is off when the owner switches it off, or when email isn't set up", async () => {
