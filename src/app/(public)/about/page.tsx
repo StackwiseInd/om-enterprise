@@ -5,7 +5,8 @@ import { ArrowRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/page";
 import { LinkButton } from "@/components/ui/button";
 import { Container, PageIntro, SectionHeading } from "@/components/public/section";
-import { addressLines, getSiteData } from "@/components/public/site-data";
+import { addressLines, directionsHref, getSiteData, mapsHref } from "@/components/public/site-data";
+import { ShopMap } from "@/components/public/shop-map";
 
 export const metadata: Metadata = {
   title: "About us",
@@ -42,6 +43,15 @@ export default function AboutPage() {
         </Container>
       </section>
 
+      <section className="border-t border-rule py-14 sm:py-20" aria-labelledby="find-us">
+        <Container>
+          <SectionHeading eyebrow="Visit us" title={<span id="find-us">Find the shop</span>} description="Come and collect your order, or see the range in person." />
+          <Suspense fallback={<Skeleton className="h-80 rounded-xl" />}>
+            <FindUs />
+          </Suspense>
+        </Container>
+      </section>
+
       <section className="border-t border-rule bg-paper py-14 sm:py-20">
         <Container>
           <SectionHeading eyebrow="What we stock" title="Product range" />
@@ -69,6 +79,26 @@ async function AboutIntro() {
         </LinkButton>
       </div>
     </>
+  );
+}
+
+async function FindUs() {
+  const { business } = await getSiteData();
+  return (
+    <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+      <div>
+        <address className="text-[17px] not-italic leading-snug text-navy-950">
+          <span className="block font-semibold">{business.name}</span>
+          {addressLines(business).map((l) => (
+            <span key={l} className="block">
+              {l}
+            </span>
+          ))}
+        </address>
+        {business.openingHours && <p className="mt-3 text-sm text-navy-600">Open: {business.openingHours}</p>}
+      </div>
+      <ShopMap name={business.name} embedUrl={business.mapEmbedUrl} opensHref={mapsHref(business)} directionsHref={directionsHref(business)} />
+    </div>
   );
 }
 

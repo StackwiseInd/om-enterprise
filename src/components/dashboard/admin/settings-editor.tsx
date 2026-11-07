@@ -45,6 +45,7 @@ const SECTIONS: Record<SectionKey, { title: string; description: string; fields:
       { key: "pan", label: "PAN", type: "text", advanced: true },
       { key: "openingHours", label: "Opening hours", type: "text", hint: "Shown on the website. Leave blank to hide.", placeholder: "e.g. Mon–Sat 9:00 am – 8:00 pm" },
       { key: "mapUrl", label: "Google Maps link", type: "url", wide: true, advanced: true },
+      { key: "mapEmbedUrl", label: "Map shown on the website", type: "text", wide: true, advanced: true, hint: "Google Maps → Share → Embed a map → copy the HTML, and paste it here (the whole <iframe> snippet is fine). Leave blank to hide the map." },
       { key: "about", label: "About the business", type: "textarea", wide: true, advanced: true },
     ],
   },

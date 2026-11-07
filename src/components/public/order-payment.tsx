@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Check, CheckCircle2, Clock3, MessageCircle, Phone, Smartphone, Store, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Clock3, MessageCircle, Phone, Smartphone, Store, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
@@ -10,6 +10,7 @@ import { cn } from "@/components/ui/cn";
 import { gatewayName, isGatewayMethod, paymentModeLabel, type PaymentMethod } from "@/lib/gateway";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { payOrder } from "./razorpay-checkout";
+import { ShopMap } from "./shop-map";
 import { formatPhone, whatsappLink } from "@/lib/india";
 import { formatPrice } from "@/lib/money";
 import type { OnlineOrderStatus } from "@/server/db/schema";
@@ -45,6 +46,8 @@ interface Shop {
   name: string;
   address: string[];
   mapUrl: string;
+  directionsUrl: string;
+  mapEmbedUrl: string;
   phone: string | null;
   whatsapp: string | null;
 }
@@ -238,16 +241,16 @@ function StatusBlock({ icon, title, children }: { icon: React.ReactNode; title: 
 
 function Pickup({ shop, orderNumber }: { shop: Shop; orderNumber: string }) {
   return (
-    <div className="mt-5 flex items-start gap-3 rounded-lg border border-navy-200 bg-paper/60 p-4 text-sm text-navy-700">
-      <Store className="mt-0.5 h-[18px] w-[18px] shrink-0 text-gold-600" />
-      <div>
-        <div className="font-semibold text-navy-950">Collect from the store only</div>
-        <div className="mt-1">{[shop.name, ...shop.address].join(", ")}</div>
-        <div className="mt-1">Show order number <span className="tabular font-semibold text-navy-950">{orderNumber}</span> at the counter.</div>
-        <a href={shop.mapUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 font-semibold text-navy-950">
-          <span className="link-draw">Open in Maps</span> <ArrowUpRight className="h-3.5 w-3.5 text-gold-600" />
-        </a>
+    <div className="mt-5">
+      <div className="flex items-start gap-3 rounded-lg border border-navy-200 bg-paper/60 p-4 text-sm text-navy-700">
+        <Store className="mt-0.5 h-[18px] w-[18px] shrink-0 text-gold-600" />
+        <div>
+          <div className="font-semibold text-navy-950">Collect from the store only</div>
+          <div className="mt-1">{[shop.name, ...shop.address].join(", ")}</div>
+          <div className="mt-1">Show order number <span className="tabular font-semibold text-navy-950">{orderNumber}</span> at the counter.</div>
+        </div>
       </div>
+      <ShopMap name={shop.name} embedUrl={shop.mapEmbedUrl} opensHref={shop.mapUrl} directionsHref={shop.directionsUrl} compact className="mt-3" />
     </div>
   );
 }

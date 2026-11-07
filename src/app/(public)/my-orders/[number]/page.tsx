@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/page";
 import { Container, PageIntro } from "@/components/public/section";
 import { OrderPayment } from "@/components/public/order-payment";
-import { addressLines, getSiteData, mapsHref } from "@/components/public/site-data";
+import { addressLines, directionsHref, getSiteData, mapsHref } from "@/components/public/site-data";
 import { getShopAccount } from "@/server/auth/shop-session";
 import { getMyOrder } from "@/server/services/online-orders";
 
@@ -38,7 +38,7 @@ async function Content({ params, searchParams }: { params: PageProps<"/my-orders
     <>
       <PageIntro crumbs={[{ href: "/", label: "Home" }, { href: "/my-orders", label: "My orders" }, { label: number }]} title={`Order ${number}`} />
       <Container className="py-8 sm:py-10">
-        <OrderPayment initial={data} autoPay={autoPay} shop={{ name: business.name, address: addressLines(business), mapUrl: mapsHref(business), phone: business.phone || null, whatsapp: business.whatsapp || null }} />
+        <OrderPayment initial={data} autoPay={autoPay} shop={{ name: business.name, address: addressLines(business), mapUrl: mapsHref(business), directionsUrl: directionsHref(business), mapEmbedUrl: business.mapEmbedUrl, phone: business.phone || null, whatsapp: business.whatsapp || null }} />
       </Container>
     </>
   );

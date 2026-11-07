@@ -6,6 +6,7 @@ import { Store, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
+import { ShopMap } from "./shop-map";
 import { gatewayName, isGatewayMethod, type PaymentMethod } from "@/lib/gateway";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatPhone } from "@/lib/india";
@@ -20,7 +21,7 @@ interface Preview {
   total: string;
 }
 
-export function CheckoutView({ account, pickup, shopName, mode }: { account: { name: string; mobile: string }; pickup: string; shopName: string; mode: PaymentMethod | null }) {
+export function CheckoutView({ account, pickup, shopName, mode, map }: { account: { name: string; mobile: string }; pickup: string; shopName: string; mode: PaymentMethod | null; map: { embedUrl: string; opensHref: string; directionsHref: string } }) {
   const onlinePay = mode !== null;
   const router = useRouter();
   const cart = useEnquiryList();
@@ -122,6 +123,10 @@ export function CheckoutView({ account, pickup, shopName, mode }: { account: { n
           <div>
             <div className="font-semibold text-navy-950">Pickup from the store only</div>
             <div className="mt-0.5">{shopName}, {pickup}. We keep your items ready once your payment is confirmed.</div>
+            <details className="group mt-2">
+              <summary className="cursor-pointer text-[13px] font-semibold text-navy-950 underline-offset-4 hover:underline">Show the shop on the map</summary>
+              <ShopMap name={shopName} embedUrl={map.embedUrl} opensHref={map.opensHref} directionsHref={map.directionsHref} compact className="mt-3" />
+            </details>
           </div>
         </div>
       </section>

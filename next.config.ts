@@ -18,7 +18,8 @@ const contentSecurityPolicy = (wasm = false, razorpay = true) =>
     "img-src 'self' blob: data: https://rzp.io https://*.razorpay.com",
     "font-src 'self'",
     `connect-src 'self'${razorpay ? " https://lumberjack.razorpay.com https://api.razorpay.com" : ""}`,
-    ...(razorpay ? ["frame-src https://api.razorpay.com https://checkout.razorpay.com"] : []),
+    // Frames: the shop's Google Map and Razorpay's payment window, on the public site only.
+    ...(razorpay ? ["frame-src https://www.google.com/maps/embed https://api.razorpay.com https://checkout.razorpay.com"] : []),
     "object-src 'none'",
     "base-uri 'self'",
     `form-action 'self'${razorpay ? " https://api.razorpay.com" : ""}`,

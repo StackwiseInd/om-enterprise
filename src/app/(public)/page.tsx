@@ -9,7 +9,8 @@ import { Skeleton } from "@/components/ui/page";
 import { ProductGrid, ProductGridSkeleton } from "@/components/public/product-card";
 import { Container, Eyebrow, SectionHeading } from "@/components/public/section";
 import { TechnicalDrawing, type DrawingKind } from "@/components/public/technical-drawing";
-import { addressLines, getSiteData, mapsHref, telHref } from "@/components/public/site-data";
+import { addressLines, directionsHref, getSiteData, mapsHref, telHref } from "@/components/public/site-data";
+import { ShopMap } from "@/components/public/shop-map";
 
 export default function HomePage() {
   return (
@@ -345,6 +346,7 @@ async function ShopContent() {
             More about us
           </LinkButton>
         </div>
+        <ShopMap name={business.name} embedUrl={business.mapEmbedUrl} opensHref={mapsHref(business)} directionsHref={directionsHref(business)} className="mt-8 max-w-xl" />
       </div>
       <div className="rounded-xl border border-navy-200 bg-white shadow-card">
         <div className="border-b border-navy-100 px-6 py-5">

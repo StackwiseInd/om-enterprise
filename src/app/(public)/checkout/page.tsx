@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/page";
 import { Container, PageIntro } from "@/components/public/section";
 import { CheckoutView } from "@/components/public/checkout-view";
-import { getSiteData, addressShort } from "@/components/public/site-data";
+import { getSiteData, addressShort, directionsHref, mapsHref } from "@/components/public/site-data";
 import { getShopAccount } from "@/server/auth/shop-session";
 import { onlinePaymentMode } from "@/server/services/online-orders";
 
@@ -28,5 +28,5 @@ async function Content() {
   if (!account) redirect("/sign-in?next=/checkout");
   const { business } = await getSiteData();
   const mode = await onlinePaymentMode();
-  return <CheckoutView account={{ name: account.name, mobile: account.mobile }} pickup={addressShort(business)} shopName={business.name} mode={mode} />;
+  return <CheckoutView account={{ name: account.name, mobile: account.mobile }} pickup={addressShort(business)} shopName={business.name} mode={mode} map={{ embedUrl: business.mapEmbedUrl, opensHref: mapsHref(business), directionsHref: directionsHref(business) }} />;
 }

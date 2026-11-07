@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { addressLines } from "@/components/public/site-data";
+import { addressLines, directionsHref, mapsHref } from "@/components/public/site-data";
+import { ShopMap } from "@/components/public/shop-map";
 import { Bullets, contactLine, PLink, PolicyPage, type Business } from "@/components/public/policy";
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ const sections = (b: Business) => [
             </>
           ) : null}
         </p>
+        <ShopMap name={b.name} embedUrl={b.mapEmbedUrl} opensHref={mapsHref(b)} directionsHref={directionsHref(b)} />
       </>
     ),
   },

@@ -13,6 +13,23 @@ const decimalString = (maxDp = 2) =>
 
 const percentString = decimalString(2).refine((v) => Number(v) <= 100, "Must be 100 or less");
 
+/**
+ * Google Maps "Embed a map" address. Staff can paste either the address or the whole <iframe> snippet Google
+ * gives them; only a https://www.google.com/maps/embed address is accepted, because it ends up in an iframe on
+ * the public site (the site's security policy allows frames from that address and nowhere else).
+ */
+export const MAP_EMBED_PATTERN = /^https:\/\/www\.google\.com\/maps\/embed\?pb=[^\s"'<>]{10,1500}$/;
+export function mapEmbedFromInput(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  const text = v.trim();
+  const fromSnippet = /<iframe[^>]*\ssrc\s*=\s*["']([^"']+)["']/i.exec(text);
+  return (fromSnippet ? fromSnippet[1] : text).replace(/&amp;/g, "&").trim();
+}
+const mapEmbedUrl = z.preprocess(
+  mapEmbedFromInput,
+  z.string().max(1600).refine((v) => v === "" || MAP_EMBED_PATTERN.test(v), "Paste the link from Google Maps → Share → Embed a map (it starts with https://www.google.com/maps/embed?pb=)"),
+);
+
 export const businessSchema = z.object({
   name: z.string().trim().min(2).max(80),
   tagline: z.string().trim().max(120),
@@ -38,6 +55,8 @@ export const businessSchema = z.object({
   about: z.string().trim().max(2000),
   openingHours: z.string().trim().max(200),
   mapUrl: z.string().trim().max(500),
+  /** The map shown on the website (empty: no map, just the link). */
+  mapEmbedUrl: mapEmbedUrl,
 });
 
 export const taxSchema = z
@@ -181,6 +200,8 @@ export const SETTINGS_DEFAULTS: Settings = {
       "OM ENTERPRISE supplies building materials for homes, shops and construction projects in and around Naswadi — paints, water tanks, bathware and sanitary fittings, CPVC, PVC, UPVC and SWR pipes and fittings, plumbing accessories and more, all under one roof.",
     openingHours: "",
     mapUrl: "",
+    mapEmbedUrl:
+      "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1345.8967304064693!2d73.71626511345866!3d22.03432422099073!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x396005527fd4b703%3A0x13060d2fe5096d41!2sOm%20enterprise!5e0!3m2!1sen!2sin!4v1794028366375!5m2!1sen!2sin",
   },
   tax: {
     registrationType: null,

@@ -5,7 +5,8 @@ import { Skeleton } from "@/components/ui/page";
 import { formatPhone, whatsappLink } from "@/lib/india";
 import { EnquiryForm } from "@/components/public/enquiry-form";
 import { Container, PageIntro } from "@/components/public/section";
-import { addressLines, getSiteData, mapsHref, telHref } from "@/components/public/site-data";
+import { addressLines, directionsHref, getSiteData, mapsHref, telHref } from "@/components/public/site-data";
+import { ShopMap } from "@/components/public/shop-map";
 
 export const metadata: Metadata = {
   title: "Contact us",
@@ -77,9 +78,6 @@ async function ContactContent() {
               </span>
             ))}
           </address>
-          <a href={mapsHref(business)} target="_blank" rel="noopener noreferrer" className="group mt-3 inline-flex items-center gap-1 text-sm font-semibold text-navy-950">
-            <span className="link-draw">Open in Maps</span> <ArrowUpRight className="h-3.5 w-3.5 text-gold-600" />
-          </a>
           {business.openingHours && (
             <div className="mt-4 flex gap-3 border-t border-rule pt-4">
               <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
@@ -90,6 +88,7 @@ async function ContactContent() {
             </div>
           )}
         </div>
+        <ShopMap name={business.name} embedUrl={business.mapEmbedUrl} opensHref={mapsHref(business)} directionsHref={directionsHref(business)} className="mt-6" />
       </div>
       <section aria-labelledby="contact-form" className="rounded-xl border border-navy-200 bg-white p-5 sm:p-7">
         <h2 id="contact-form" className="text-lg font-semibold tracking-[-0.01em] text-navy-950">Send a message</h2>

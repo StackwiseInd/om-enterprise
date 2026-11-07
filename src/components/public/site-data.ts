@@ -40,6 +40,11 @@ export function mapsHref(b: Settings["business"]): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.name}, ${addressShort(b)}`)}`;
 }
 
+/** Google's turn-by-turn directions to the shop, from wherever the customer is. */
+export function directionsHref(b: Settings["business"]): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${b.name}, ${addressShort(b)}`)}`;
+}
+
 export function telHref(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return `tel:+91${digits.slice(-10)}`;

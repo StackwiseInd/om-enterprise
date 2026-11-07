@@ -64,6 +64,22 @@ test.describe("public website", () => {
     await expect(page.getByRole("heading", { name: /Grievance Officer/ })).toBeVisible();
   });
 
+  test("the shop map is embedded wherever customers look for the location", async ({ page }) => {
+    for (const path of ["/", "/contact", "/about", "/pickup-policy"]) {
+      const res = await page.goto(path);
+      expect(res!.headers()["content-security-policy"], path).toContain("frame-src https://www.google.com/maps/embed");
+      const frame = page.locator('iframe[src^="https://www.google.com/maps/embed?pb="]');
+      await expect(frame, path).toHaveCount(1);
+      await expect(frame, path).toHaveAttribute("title", /Map showing where .+ is/);
+      await expect(frame, path).toHaveAttribute("loading", "lazy");
+      await expect(page.getByRole("link", { name: "Get directions" }).first(), path).toHaveAttribute("href", /google\.com\/maps\/dir\/\?api=1&destination=/);
+      await expectNoHorizontalScroll(page);
+    }
+    // The staff area never allows frames.
+    const staff = await page.request.get("/login");
+    expect(staff.headers()["content-security-policy"]).not.toContain("frame-src");
+  });
+
   test("an invalid share link shows a friendly page and no data", async ({ page }) => {
     // Streaming pages can't change the HTTP status once the shell is sent; what matters is that
     // nothing is revealed and the page is not indexed.
