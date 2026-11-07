@@ -77,6 +77,8 @@ const nextConfig: NextConfig = {
   },
   // Bill PDFs read their fonts and the logo from assets/ at runtime: every route that makes one.
   outputFileTracingIncludes: {
+    "/api/shop/orders/[number]/receipt": ["./assets/fonts/**", "./assets/brand/om-enterprise-logo.jpg"],
+    "/api/admin/online-orders/[id]/receipt": ["./assets/fonts/**", "./assets/brand/om-enterprise-logo.jpg"],
     "/api/documents/[id]/pdf": ["./assets/fonts/**", "./assets/brand/om-enterprise-logo.jpg"],
     "/api/documents/[id]/email": ["./assets/fonts/**", "./assets/brand/om-enterprise-logo.jpg"],
     "/api/documents/[id]/whatsapp": ["./assets/fonts/**", "./assets/brand/om-enterprise-logo.jpg"],

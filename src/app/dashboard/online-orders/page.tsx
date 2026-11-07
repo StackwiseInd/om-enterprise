@@ -26,7 +26,8 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
   const actor = await requirePageActor(["orders.view", "payments.verify"]);
   const sp = await searchParams;
   const status = str(sp, "status") as OnlineOrderStatus | "to_verify" | undefined;
-  const rows = await listOnlineOrders(actor, status || undefined);
+  const q = str(sp, "q");
+  const rows = await listOnlineOrders(actor, status || undefined, q || undefined);
   const toCheck = rows.filter((r) => r.o.status === "payment_submitted").length;
 
   return (
@@ -38,6 +39,7 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
       />
       <FilterBar
         fields={[
+          { kind: "search", name: "q", placeholder: "Order number, customer name or mobile, payment ID / UTR" },
           {
             kind: "select",
             name: "status",
@@ -57,7 +59,7 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
             ],
           },
         ]}
-        values={{ status }}
+        values={{ q, status }}
       />
       {!status && toCheck > 0 && (
         <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-800">

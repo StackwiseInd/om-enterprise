@@ -8,7 +8,9 @@ import { createProduct, createVariant, setProductPublished, setProductReview } f
 import { proposePrice } from "@/server/services/pricing";
 import { customerAuditActor, shopSignUp, type ShopAccount } from "@/server/services/shop-auth";
 import { generateCoupons, getCouponBatch } from "@/server/services/coupons";
-import { cancelMyOrder, getMyOrder, getOnlineOrder, onlinePaymentMode, payMyOrder, placeOnlineOrder, setOnlineOrderStatus, submitUtr, verifyOnlinePayment } from "@/server/services/online-orders";
+import { cancelMyOrder, getMyOrder, getOnlineOrder, listOnlineOrders, onlinePaymentMode, payMyOrder, placeOnlineOrder, setOnlineOrderStatus, submitUtr, verifyOnlinePayment } from "@/server/services/online-orders";
+import { getPaymentReceipt, getPaymentReceiptForStaff, receiptCodeFor } from "@/server/services/online-receipt";
+import { renderPaymentReceiptPdf } from "@/server/pdf/payment-receipt";
 import { __setRazorpayClientForTests, checkIntervalMs, GATEWAY_TIMEOUT_REASON, reconcileOrder, refundOnlineOrder, verifyCheckoutPayment } from "@/server/services/online-payments";
 import { handleGatewayWebhook } from "@/server/services/payments";
 import { RazorpayClient, razorpayConfigFromEnv } from "@/server/payments/razorpay";
@@ -306,5 +308,88 @@ describe("refunds", () => {
     await reconcileOrder(id, { force: true });
     await setOnlineOrderStatus(sachin, id, { status: "collected" });
     expect((await rejects(refundOnlineOrder(admin, id, { reason: "Changed mind" }))).code).toBe("CONFLICT");
+  });
+});
+
+describe("payment receipt and handover record", () => {
+  async function paidOrder(a: ShopAccount, code?: string) {
+    const { orderNumber } = await placeOnlineOrder(a, { items: cart(), couponCode: code }, client);
+    const rzpOrder = fake.orderByReceipt(`${orderNumber}-1`)!.id;
+    const p = fake.pay(rzpOrder);
+    await verify(a, orderNumber, rzpOrder, p.id);
+    return { orderNumber, id: (await row(orderNumber)).id, payment: p };
+  }
+
+  it("gives a paid order a receipt (not an invoice) with the items, the payment and a check code", async () => {
+    const a = await customer();
+    const code = await oneCode();
+    const { orderNumber, payment } = await paidOrder(a, code);
+    const r = await getPaymentReceipt(a, orderNumber);
+    expect(r).toMatchObject({ orderNumber, status: "paid", total: "900.00", subtotal: "1000.00", discount: "100.00", couponCode: code, customer: { name: "Meena Joshi", mobile: a.mobile } });
+    expect(r.lines).toHaveLength(2);
+    expect(r.payment).toMatchObject({ gateway: "Razorpay", method: "UPI", paymentId: payment.id, utr: payment.rrn });
+    // The code on the page, on the PDF's data and in the staff view are the same, and tied to this payment.
+    const mine = (await getMyOrder(a, orderNumber)).order;
+    expect(mine.receiptCode).toBe(r.code);
+    expect(r.code).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}$/);
+    const o = await row(orderNumber);
+    expect(receiptCodeFor({ ...o, total: "100.00" })).not.toBe(r.code); // a different amount gives a different code
+    expect(receiptCodeFor({ ...o, gatewayTransactionId: "pay_FORGED000001" })).not.toBe(r.code);
+    const pdf = await renderPaymentReceiptPdf(r);
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.length).toBeGreaterThan(3000);
+  });
+
+  it("gives no receipt before the payment is confirmed, or to anyone but the customer", async () => {
+    const a = await customer();
+    const { orderNumber } = await placeOnlineOrder(a, { items: cart() }, client);
+    expect((await rejects(getPaymentReceipt(a, orderNumber))).code).toBe("CONFLICT");
+    expect((await getMyOrder(a, orderNumber)).order.receiptCode).toBeNull();
+    const paid = await paidOrder(await customer());
+    const stranger = await customer();
+    expect((await rejects(getPaymentReceipt(stranger, paid.orderNumber))).code).toBe("NOT_FOUND");
+    expect((await rejects(getPaymentReceiptForStaff(sachin, (await row(orderNumber)).id))).code).toBe("CONFLICT");
+  });
+
+  it("records who handed the items over, when, and the remarks, and shows them as proof", async () => {
+    const a = await customer();
+    const { orderNumber, id } = await paidOrder(a);
+    const before = await getOnlineOrder(sachin, id);
+    expect(before.order).toMatchObject({ status: "paid", collectNote: null, collectedAt: null });
+    expect(before.receiptCode).toBe((await getPaymentReceipt(a, orderNumber)).code);
+
+    await setOnlineOrderStatus(sachin, id, { status: "collected", reason: "  Took everything; paper bill no. 1234 given  " });
+    const after = await getOnlineOrder(sachin, id);
+    expect(after.order).toMatchObject({ status: "collected", collectNote: "Took everything; paper bill no. 1234 given" });
+    expect(after.order.collectedAt).toBeTruthy();
+    expect(after.handledByName).toBe(sachin.displayName);
+    expect(after.history.some((h) => h.action === "online_order.collected" && h.summary.includes("paper bill no. 1234"))).toBe(true);
+    // The customer sees that it was collected, but never the staff's remarks.
+    const mine = (await getMyOrder(a, orderNumber)).order;
+    expect(mine.status).toBe("collected");
+    expect(mine.collectedAt).toBeTruthy();
+    expect(JSON.stringify(mine)).not.toContain("paper bill");
+    // The receipt now says collected.
+    expect((await getPaymentReceipt(a, orderNumber)).status).toBe("collected");
+    // Remarks are optional.
+    const other = await paidOrder(await customer());
+    await setOnlineOrderStatus(sachin, other.id, { status: "collected" });
+    expect((await getOnlineOrder(sachin, other.id)).order.collectNote).toBeNull();
+  });
+
+  it("finds an order from what the customer shows at the counter", async () => {
+    const a = await customer();
+    const { orderNumber, payment } = await paidOrder(a);
+    const ids = async (q: string) => (await listOnlineOrders(sachin, undefined, q)).map((r) => r.o.orderNumber);
+    expect(await ids(orderNumber)).toEqual([orderNumber]);
+    expect(await ids(orderNumber.toLowerCase())).toEqual([orderNumber]);
+    expect(await ids(payment.id)).toEqual([orderNumber]);
+    expect(await ids(payment.rrn)).toEqual([orderNumber]);
+    expect(await ids(` ${a.mobile.slice(0, 5)} ${a.mobile.slice(5)} `)).toContain(orderNumber);
+    expect(await ids("no-such-order-zzz")).toEqual([]);
+    // Search characters are plain text, not patterns.
+    expect(await ids("%")).toEqual([]);
+    expect((await listOnlineOrders(sachin, "paid", orderNumber)).map((r) => r.o.orderNumber)).toEqual([orderNumber]);
+    expect(await listOnlineOrders(sachin, "refunded", orderNumber)).toEqual([]);
   });
 });

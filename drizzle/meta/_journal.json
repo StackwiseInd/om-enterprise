@@ -85,6 +85,13 @@
       "when": 1793986910142,
       "tag": "0011_razorpay_checkout",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794029110931,
+      "tag": "0012_handover_note",
+      "breakpoints": true
     }
   ]
 }

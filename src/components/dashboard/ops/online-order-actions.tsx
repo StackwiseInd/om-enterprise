@@ -24,6 +24,7 @@ export function OnlineOrderActions({
   gatewayLabel = "the payment gateway",
   canRefund = false,
   refundState = null,
+  receiptCode = null,
 }: {
   id: string;
   status: OnlineOrderStatus;
@@ -38,10 +39,12 @@ export function OnlineOrderActions({
   gatewayLabel?: string;
   canRefund?: boolean;
   refundState?: string | null;
+  /** The code on the customer's payment receipt; staff compare it before handing items over. */
+  receiptCode?: string | null;
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [open, setOpen] = useState<"verify" | "fail" | "cancel" | "refund" | null>(null);
+  const [open, setOpen] = useState<"verify" | "fail" | "cancel" | "refund" | "handover" | null>(null);
   const [note, setNote] = useState("");
   const [seen, setSeen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -123,7 +126,7 @@ export function OnlineOrderActions({
         </Button>
       )}
       {(status === "paid" || status === "ready") && canManage && (
-        <Button variant={status === "ready" ? "primary" : "outline"} icon={<PackageCheck className="h-4 w-4" />} onClick={() => call("status", { status: "collected" }, "Marked collected")} loading={busy}>
+        <Button variant={status === "ready" ? "primary" : "outline"} icon={<PackageCheck className="h-4 w-4" />} onClick={() => setOpen("handover")}>
           Handed over (collected)
         </Button>
       )}
@@ -203,6 +206,38 @@ export function OnlineOrderActions({
         <Field label="Reason" htmlFor="r-reason" required>
           <Input id="r-reason" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="e.g. Item out of stock" />
         </Field>
+      </Dialog>
+
+      <Dialog
+        open={open === "handover"}
+        onClose={close}
+        title={`Hand over ${orderNumber}`}
+        description="Records that this customer took these items from the shop today. The record, with your remarks, stays on the order."
+        footer={
+          <>
+            <Button variant="ghost" onClick={close}>Back</Button>
+            <Button variant="success" disabled={!seen} loading={busy} onClick={() => call("status", { status: "collected", reason: note.trim() || null }, "Handover recorded")}>
+              Confirm handover
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {error && <Alert tone="danger">{error}</Alert>}
+          {receiptCode && (
+            <Alert tone="info">
+              If the customer shows a payment receipt, its code should read <strong className="tabular">{receiptCode}</strong>. A different code, or none, means it did not come from this order.
+            </Alert>
+          )}
+          <Checkbox
+            checked={seen}
+            onChange={(e) => setSeen(e.target.checked)}
+            label={<span>I have handed these items to the customer who placed this order.</span>}
+          />
+          <Field label="Remarks (optional)" htmlFor="h-note" hint="e.g. took everything; paper bill no. 1234 given; one item to follow.">
+            <Textarea id="h-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={3} />
+          </Field>
+        </div>
       </Dialog>
 
       <Dialog

@@ -1,5 +1,6 @@
 import "server-only";
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb, type Tx } from "@/server/db/client";
 import { auditLogs, coupons, onlineOrderLines, onlineOrders, users, type OnlineOrderStatus } from "@/server/db/schema";
 import { audit } from "@/server/audit";
@@ -12,6 +13,7 @@ import { evaluateCoupon, releaseCoupon, type AppliedCoupon } from "@/server/serv
 import { customerAuditActor, type ShopAccount } from "@/server/services/shop-auth";
 import { GATEWAY_PAY_SECONDS, GATEWAY_TIMEOUT_REASON, gatewayEnabled, mayAskNow, openGatewayCheckout, reconcileOpenOrders, reconcileOrder, retryGatewayPayment, type CheckoutParams } from "@/server/services/online-payments";
 import { gatewayName, isGatewayMethod, type PaymentMethod } from "@/lib/gateway";
+import { hasReceipt, receiptCodeFor } from "@/server/services/online-receipt";
 import { buildUpiUri, isValidUpiUtr } from "@/lib/india";
 import { D, formatPrice, m } from "@/lib/money";
 
@@ -227,6 +229,9 @@ function publicOrder(o: typeof onlineOrders.$inferSelect) {
     gatewayState: o.gatewayState,
     refundState: o.refundState,
     refundedAt: o.refundedAt?.toISOString() ?? null,
+    collectedAt: o.collectedAt?.toISOString() ?? null,
+    /** The code printed on the payment receipt, for the shop to check. Only once the payment is confirmed. */
+    receiptCode: hasReceipt(o.status) ? receiptCodeFor(o) : null,
     expiresAt: o.expiresAt.toISOString(),
     utr: o.utr ?? o.gatewayUtr,
     utrSubmittedAt: o.utrSubmittedAt?.toISOString() ?? null,
@@ -292,12 +297,20 @@ export async function cancelMyOrder(account: ShopAccount, orderNumber: string, c
 /* Staff                                                               */
 /* ------------------------------------------------------------------ */
 
-export async function listOnlineOrders(actor: Actor, status?: OnlineOrderStatus | "to_verify") {
+export async function listOnlineOrders(actor: Actor, status?: OnlineOrderStatus | "to_verify", q?: string) {
   requirePermission(actor, ["orders.view", "payments.verify"]);
   const db = getDb();
   await db.transaction((tx) => expireStaleOrders(tx));
   await reconcileOpenOrders().catch((err) => console.error("[gateway] reconcile", err));
-  const where = status === "to_verify" ? eq(onlineOrders.status, "payment_submitted") : status ? eq(onlineOrders.status, status) : undefined;
+  const byStatus = status === "to_verify" ? eq(onlineOrders.status, "payment_submitted") : status ? eq(onlineOrders.status, status) : undefined;
+  // Find an order from what a customer shows at the counter: its number, their name or mobile, or a payment reference.
+  const term = q?.trim().slice(0, 60);
+  const like = term ? `%${term.replace(/[\\%_]/g, "\\$&")}%` : null;
+  const digits = term?.replace(/\D/g, "") ?? "";
+  const bySearch = like
+    ? or(ilike(onlineOrders.orderNumber, like), ilike(onlineOrders.customerName, like), ilike(onlineOrders.mobile, digits.length >= 3 ? `%${digits}%` : like), ilike(onlineOrders.gatewayTransactionId, like), ilike(onlineOrders.utr, like), ilike(onlineOrders.gatewayUtr, like), ilike(onlineOrders.couponCode, like))
+    : undefined;
+  const where = byStatus && bySearch ? and(byStatus, bySearch) : (byStatus ?? bySearch);
   return db
     .select({ o: onlineOrders, itemCount: sql<number>`(select count(*)::int from online_order_lines l where l.order_id = "online_orders"."id")` })
     .from(onlineOrders)
@@ -316,7 +329,13 @@ export async function getOnlineOrder(actor: Actor, id: string) {
   const db = getDb();
   await db.transaction((tx) => expireStaleOrders(tx));
   await reconcileOrder(id).catch((err) => console.error("[gateway] reconcile", err));
-  const [row] = await db.select({ o: onlineOrders, verifiedByName: users.displayName }).from(onlineOrders).leftJoin(users, eq(users.id, onlineOrders.verifiedBy)).where(eq(onlineOrders.id, id));
+  const handler = alias(users, "handler");
+  const [row] = await db
+    .select({ o: onlineOrders, verifiedByName: users.displayName, handledByName: handler.displayName })
+    .from(onlineOrders)
+    .leftJoin(users, eq(users.id, onlineOrders.verifiedBy))
+    .leftJoin(handler, eq(handler.id, onlineOrders.handledBy))
+    .where(eq(onlineOrders.id, id));
   if (!row) throw notFound("Online order");
   const lines = await db.select().from(onlineOrderLines).where(eq(onlineOrderLines.orderId, id));
   const history = await db
@@ -325,7 +344,7 @@ export async function getOnlineOrder(actor: Actor, id: string) {
     .where(and(eq(auditLogs.entityType, "online_order"), eq(auditLogs.entityId, id)))
     .orderBy(desc(auditLogs.at))
     .limit(100);
-  return { order: { ...row.o, ipHash: undefined }, verifiedByName: row.verifiedByName, lines, history };
+  return { order: { ...row.o, ipHash: undefined }, verifiedByName: row.verifiedByName, handledByName: row.handledByName, receiptCode: hasReceipt(row.o.status) ? receiptCodeFor(row.o) : null, lines, history };
 }
 
 async function lockOrder(tx: Tx, id: string) {
@@ -381,7 +400,8 @@ export async function setOnlineOrderStatus(actor: Actor, id: string, input: { st
       await tx.update(onlineOrders).set({ status: "ready", readyAt: now, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
     } else if (input.status === "collected") {
       if (!["paid", "ready"].includes(o.status)) throw conflict("Only a paid order can be handed over");
-      await tx.update(onlineOrders).set({ status: "collected", collectedAt: now, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
+      // The remarks are the staff's own record of the handover ("took 2 tees and the glue, bill no. …").
+      await tx.update(onlineOrders).set({ status: "collected", collectedAt: now, collectNote: input.reason?.trim().slice(0, 300) || null, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
     } else {
       if (!["awaiting_payment", "payment_submitted", "payment_failed"].includes(o.status)) throw conflict("A paid order can't be cancelled here; refund it at the counter first");
       const reason = input.reason?.trim();

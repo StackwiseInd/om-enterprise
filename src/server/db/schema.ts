@@ -1266,6 +1266,8 @@ export const onlineOrders = pgTable(
     failureReason: text("failure_reason"),
     readyAt: ts("ready_at"),
     collectedAt: ts("collected_at"),
+    /** Staff remarks recorded when the items were handed over at the counter. */
+    collectNote: text("collect_note"),
     cancelledAt: ts("cancelled_at"),
     cancelReason: text("cancel_reason"),
     handledBy: uuid("handled_by").references(() => users.id),

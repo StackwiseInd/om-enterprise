@@ -1,0 +1,1 @@
+ALTER TABLE "online_orders" ADD COLUMN "collect_note" text;

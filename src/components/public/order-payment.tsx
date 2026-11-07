@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCircle2, Clock3, MessageCircle, Phone, Smartphone, Store, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Clock3, Download, FileText, MessageCircle, Phone, Smartphone, Store, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
@@ -31,6 +31,8 @@ interface OrderData {
     gatewayState: string | null;
     refundState: string | null;
     refundedAt: string | null;
+    collectedAt: string | null;
+    receiptCode: string | null;
     expiresAt: string;
     utr: string | null;
     utrSubmittedAt: string | null;
@@ -134,12 +136,14 @@ export function OrderPayment({ initial, shop, autoPay = false }: { initial: Orde
               <p>
                 We received {formatPrice(o.total)} {paidVia}. {o.status === "ready" ? "Your items are packed and waiting at the counter." : "We'll keep your items ready at the counter."}
               </p>
+              <ReceiptCard order={o} />
               <Pickup shop={shop} orderNumber={o.orderNumber} />
             </StatusBlock>
           )}
           {o.status === "collected" && (
             <StatusBlock icon={<CheckCircle2 className="h-7 w-7 text-emerald-600" />} title="Collected. Thank you!">
-              <p>You collected this order from {shop.name}.</p>
+              <p>You collected this order from {shop.name}{o.collectedAt ? ` on ${time(o.collectedAt)}` : ""}.</p>
+              <ReceiptCard order={o} />
             </StatusBlock>
           )}
           {o.status === "payment_failed" && gateway && (
@@ -235,6 +239,34 @@ function StatusBlock({ icon, title, children }: { icon: React.ReactNode; title: 
         <h2 className="headline text-[1.375rem] font-bold text-navy-950 sm:text-[1.5rem]">{title}</h2>
       </div>
       <div className="mt-3 text-[15px] leading-relaxed text-navy-600">{children}</div>
+    </div>
+  );
+}
+
+/** The payment receipt to show at the counter: a receipt, not a tax invoice. */
+function ReceiptCard({ order }: { order: OrderData["order"] }) {
+  return (
+    <div className="mt-5 rounded-lg border border-navy-200 bg-white p-4">
+      <div className="flex items-start gap-3">
+        <FileText className="mt-0.5 h-[18px] w-[18px] shrink-0 text-gold-600" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-navy-950">Your proof of payment</div>
+          <p className="mt-1 text-sm leading-relaxed text-navy-600">
+            Show this receipt at the counter when you collect. It lists your items and what you paid. It is a payment receipt, not a tax invoice: the shop gives you its bill when you collect.
+          </p>
+          {order.receiptCode && (
+            <p className="mt-2 text-[13px] text-navy-500">
+              Receipt code <span className="tabular font-semibold tracking-wide text-navy-950">{order.receiptCode}</span>
+            </p>
+          )}
+          <a
+            href={`/api/shop/orders/${order.orderNumber}/receipt?download=1`}
+            className="mt-3 inline-flex h-11 items-center gap-2 rounded-lg bg-navy-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-navy-800"
+          >
+            <Download className="h-4 w-4" /> Download payment receipt (PDF)
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

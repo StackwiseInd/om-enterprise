@@ -40,7 +40,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 async function Detail({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requirePageActor(["orders.view", "payments.verify"]);
   const { id } = await params;
-  const { order: o, lines, history, verifiedByName } = await loadOr404(getOnlineOrder(actor, id));
+  const { order: o, lines, history, verifiedByName, handledByName, receiptCode } = await loadOr404(getOnlineOrder(actor, id));
+  const paidOnline = ["paid", "ready", "collected"].includes(o.status);
   const st = ONLINE_ORDER_STATUS[o.status];
 
   return (
@@ -64,6 +65,46 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       />
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="min-w-0 space-y-6 xl:col-span-2">
+          {paidOnline && (
+            <Card>
+              <CardHeader
+                title="Proof of purchase"
+                description="What to show if anyone asks: this customer paid online for these items, and whether they have taken them from the shop."
+                actions={
+                  <a href={`/api/admin/online-orders/${o.id}/receipt`} target="_blank" rel="noopener noreferrer" className={buttonClass("outline", "sm")}>
+                    Print the payment receipt
+                  </a>
+                }
+              />
+              <CardBody>
+                <dl>
+                  <Row label="Paid online">
+                    <Money value={o.total} className="font-semibold" /> {isGatewayMethod(o.paymentMethod) ? `through ${gatewayName(o.paymentMethod)}` : "by UPI"}
+                    {o.verifiedAt ? <span className="text-navy-500"> · <DateTime value={o.verifiedAt} /></span> : null}
+                  </Row>
+                  <Row label="Customer">{o.customerName} · <span className="tabular">{o.mobile}</span></Row>
+                  <Row label="Items">{lines.length} {lines.length === 1 ? "line" : "lines"} (listed below)</Row>
+                  {receiptCode && (
+                    <Row label="Receipt code">
+                      <span className="tabular font-semibold tracking-wide">{receiptCode}</span>
+                      <span className="block text-xs text-navy-500">The customer&apos;s receipt shows this same code.</span>
+                    </Row>
+                  )}
+                  <Row label="Handed over">
+                    {o.collectedAt ? (
+                      <>
+                        <span className="font-semibold text-emerald-800">Yes</span> · <DateTime value={o.collectedAt} />
+                        {handledByName ? <> by {handledByName}</> : null}
+                      </>
+                    ) : (
+                      <span className="text-amber-800">Not collected yet</span>
+                    )}
+                  </Row>
+                  {o.collectNote && <Row label="Remarks">{o.collectNote}</Row>}
+                </dl>
+              </CardBody>
+            </Card>
+          )}
           <Card>
             <CardHeader title="Payment" description={isGatewayMethod(o.paymentMethod) ? `${gatewayName(o.paymentMethod)}: confirmed by ${gatewayName(o.paymentMethod)}'s own status API` : `UPI QR to ${o.upiVpa}, exact amount in the QR; checked by staff`} />
             <CardBody className="grid gap-6 md:grid-cols-2">
@@ -113,6 +154,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                 gatewayLabel={gatewayName(o.paymentMethod)}
                 canRefund={can(actor, "payments.refund")}
                 refundState={o.refundState}
+                receiptCode={receiptCode}
               />
             </CardBody>
           </Card>
