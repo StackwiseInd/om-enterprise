@@ -1,11 +1,13 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { MessageCircle, Phone, UserRound } from "lucide-react";
+import { Mail, MessageCircle, Phone, ScrollText, UserRound } from "lucide-react";
 import { requirePageActor } from "@/server/auth/session";
 import { gatewayName, isGatewayMethod } from "@/lib/gateway";
 import { can } from "@/server/auth/actor";
-import { getOnlineOrder } from "@/server/services/online-orders";
-import { whatsappLink } from "@/lib/india";
+import { getOnlineOrder, onlineOrderDeleteBlocked } from "@/server/services/online-orders";
+import { deletePhrase } from "@/lib/delete-phrase";
+import { DeleteRecord } from "@/components/dashboard/ops/delete-record";
+import { formatPhone, whatsappLink } from "@/lib/india";
 import { formatQty } from "@/lib/money";
 import { ONLINE_ORDER_STATUS } from "@/lib/online-order-status";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -33,7 +35,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-navy-100 py-2.5 text-sm last:border-b-0">
       <dt className="text-navy-500">{label}</dt>
-      <dd className="text-right text-navy-950">{children}</dd>
+      <dd className="min-w-0 break-words text-right text-navy-950">{children}</dd>
     </div>
   );
 }
@@ -41,8 +43,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 async function Detail({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requirePageActor(["orders.view", "payments.verify"]);
   const { id } = await params;
-  const { order: o, lines, history, verifiedByName, handledByName, receiptCode } = await loadOr404(getOnlineOrder(actor, id));
-  const paidOnline = ["paid", "ready", "collected"].includes(o.status);
+  const { order: o, lines, history, verifiedByName, handledByName, confirmedByName, customerDetails: cd, receiptCode } = await loadOr404(getOnlineOrder(actor, id));
+  const paidOnline = ["paid", "confirmed", "ready", "collected"].includes(o.status);
   const st = ONLINE_ORDER_STATUS[o.status];
 
   return (
@@ -63,7 +65,35 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
             Placed <DateTime value={o.createdAt} /> by {o.customerName}
           </>
         }
+        actions={
+          <>
+            {actor.isSuperAdmin && (
+              <Link href={`/admin/logs/online-orders?q=${o.orderNumber}`} className={buttonClass("outline")}>
+                <ScrollText className="h-4 w-4" /> Full log
+              </Link>
+            )}
+            {actor.isSuperAdmin && (
+              <DeleteRecord
+                kind="online_order"
+                id={o.id}
+                name={o.orderNumber}
+                phrase={deletePhrase(actor.username)}
+                blocked={onlineOrderDeleteBlocked(o.status)}
+                consequences={[
+                  o.status === "awaiting_payment" ? "The order is closed first, so a payment can't land on it unnoticed (a late payment is refunded automatically)." : "",
+                  o.status === "collected" ? "The payment and handover stay on the bank and Razorpay records; only this order disappears from the website lists." : "",
+                ].filter(Boolean)}
+                afterDelete="/dashboard/online-orders"
+              />
+            )}
+          </>
+        }
       />
+      {o.status === "paid" && (
+        <div className="rounded-xl border border-gold-300 bg-gold-50/60 px-4 py-3 text-sm text-navy-800">
+          <strong className="text-navy-950">Paid, waiting for you to confirm.</strong> Until you confirm it, the customer can still cancel and gets an automatic refund. Confirm it once you have the items, or mark it ready.
+        </div>
+      )}
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="min-w-0 space-y-6 xl:col-span-2">
           {paidOnline && (
@@ -84,6 +114,16 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                     {o.verifiedAt ? <span className="text-navy-500"> · <DateTime value={o.verifiedAt} /></span> : null}
                   </Row>
                   <Row label="Customer">{o.customerName} · <span className="tabular">{o.mobile}</span></Row>
+                  <Row label="Confirmed">
+                    {o.confirmedAt ? (
+                      <>
+                        <DateTime value={o.confirmedAt} />
+                        {confirmedByName ? <> by {confirmedByName}</> : null}
+                      </>
+                    ) : (
+                      <span className="text-amber-800">Not yet: the customer can still cancel</span>
+                    )}
+                  </Row>
                   <Row label="Items">{lines.length} {lines.length === 1 ? "line" : "lines"} (listed below)</Row>
                   {receiptCode && (
                     <Row label="Receipt code">
@@ -195,8 +235,17 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <div className="space-y-6">
           <Card>
-            <CardHeader title={o.customerName} description="Website account" />
-            <CardBody className="flex flex-wrap gap-2">
+            <CardHeader title={o.customerName} description="As on the order when it was placed (printed on the receipt)." />
+            <CardBody className="space-y-4">
+              <dl>
+                <Row label="Mobile"><span className="tabular">{formatPhone(o.mobile)}</span></Row>
+                {cd.altMobile && <Row label="Other phone"><span className="tabular">{formatPhone(cd.altMobile)}</span></Row>}
+                <Row label="Email">{o.customerEmail ? <span className="break-all">{o.customerEmail}</span> : <span className="text-navy-300">—</span>}</Row>
+                {cd.businessName && <Row label="Business">{cd.businessName}</Row>}
+                {cd.gstin && <Row label="GSTIN"><span className="tabular">{cd.gstin}</span></Row>}
+                <Row label="Address">{cd.address.length ? <span className="block whitespace-pre-line">{cd.address.join("\n")}</span> : <span className="text-navy-300">Not given</span>}</Row>
+              </dl>
+              <div className="flex flex-wrap gap-2">
               <a href={`tel:+91${o.mobile}`} className={buttonClass("outline")}>
                 <Phone className="h-4 w-4" /> <span className="tabular">{o.mobile}</span>
               </a>
@@ -208,6 +257,12 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                   <UserRound className="h-4 w-4" /> Customer record
                 </Link>
               )}
+              {o.customerEmail && (
+                <a href={`mailto:${o.customerEmail}`} className={buttonClass("outline")}>
+                  <Mail className="h-4 w-4" /> Email
+                </a>
+              )}
+              </div>
             </CardBody>
           </Card>
           <Card>

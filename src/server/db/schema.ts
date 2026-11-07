@@ -1142,6 +1142,17 @@ export const shopAccounts = pgTable(
     /** Set when the customer entered the code emailed to this address. */
     emailVerifiedAt: ts("email_verified_at"),
     passwordHash: text("password_hash").notNull(),
+    /** Profile the customer keeps up to date (My profile): printed on their receipts and shown to staff. */
+    businessName: text("business_name"),
+    gstin: text("gstin"),
+    altMobile: text("alt_mobile"),
+    addressLine1: text("address_line1"),
+    addressLine2: text("address_line2"),
+    landmark: text("landmark"),
+    city: text("city"),
+    state: text("state"),
+    pincode: text("pincode"),
+    profileUpdatedAt: ts("profile_updated_at"),
     isActive: boolean("is_active").notNull().default(true),
     failedLoginCount: integer("failed_login_count").notNull().default(0),
     lockedUntil: ts("locked_until"),
@@ -1234,12 +1245,21 @@ export type OnlineOrderStatus =
   | "payment_submitted"
   | "paid"
   | "payment_failed"
+  | "confirmed"
   | "ready"
   | "collected"
   | "cancelled"
   | "expired"
   | "refunding"
   | "refunded";
+
+/** Snapshot of the customer's profile on an order (what the receipt prints). */
+export interface OrderCustomerDetails {
+  businessName: string | null;
+  gstin: string | null;
+  altMobile: string | null;
+  address: string[];
+}
 
 /** A paid-online, collect-at-the-store order placed by a signed-in customer. */
 export const onlineOrders = pgTable(
@@ -1252,6 +1272,9 @@ export const onlineOrders = pgTable(
       .references(() => shopAccounts.id),
     customerName: text("customer_name").notNull(),
     mobile: text("mobile").notNull(),
+    /** The customer's email and profile (address, business, GSTIN) as they were when the order was placed. */
+    customerEmail: text("customer_email"),
+    customerDetails: jsonb("customer_details").$type<OrderCustomerDetails>(),
     status: text("status").$type<OnlineOrderStatus>().notNull().default("awaiting_payment"),
     subtotal: money("subtotal").notNull(),
     discount: money("discount").notNull().default("0"),
@@ -1289,6 +1312,9 @@ export const onlineOrders = pgTable(
     verifiedAt: ts("verified_at"),
     verificationNote: text("verification_note"),
     failureReason: text("failure_reason"),
+    /** The shop accepted the order: from here the customer can no longer cancel it themselves. */
+    confirmedAt: ts("confirmed_at"),
+    confirmedBy: uuid("confirmed_by").references(() => users.id),
     readyAt: ts("ready_at"),
     collectedAt: ts("collected_at"),
     /** Staff remarks recorded when the items were handed over at the counter. */
@@ -1296,6 +1322,10 @@ export const onlineOrders = pgTable(
     cancelledAt: ts("cancelled_at"),
     cancelReason: text("cancel_reason"),
     handledBy: uuid("handled_by").references(() => users.id),
+    /** Deleted by the Super Admin: hidden everywhere; the row stays so late payments and the log still resolve. */
+    deletedAt: ts("deleted_at"),
+    deletedBy: uuid("deleted_by").references(() => users.id),
+    deleteReason: text("delete_reason"),
     ipHash: text("ip_hash"),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
@@ -1305,19 +1335,19 @@ export const onlineOrders = pgTable(
     index("online_orders_account_idx").on(t.accountId, t.createdAt),
     check(
       "online_orders_status",
-      sql`${t.status} in ('awaiting_payment','payment_submitted','paid','payment_failed','ready','collected','cancelled','expired','refunding','refunded')`,
+      sql`${t.status} in ('awaiting_payment','payment_submitted','paid','payment_failed','confirmed','ready','collected','cancelled','expired','refunding','refunded')`,
     ),
     check("online_orders_amounts", sql`${t.discount} >= 0 and ${t.total} > 0 and ${t.total} = ${t.subtotal} - ${t.discount}`),
     check("online_orders_method", sql`${t.paymentMethod} in ('upi_manual','razorpay')`),
     check(
       "online_orders_paid_verified",
-      sql`${t.status} not in ('paid','ready','collected') or (${t.verifiedAt} is not null and (${t.utr} is not null or ${t.gatewayTransactionId} is not null))`,
+      sql`${t.status} not in ('paid','confirmed','ready','collected') or (${t.verifiedAt} is not null and (${t.utr} is not null or ${t.gatewayTransactionId} is not null))`,
     ),
     check("online_orders_manual_qr", sql`${t.paymentMethod} <> 'upi_manual' or (${t.upiVpa} is not null and ${t.qrPayload} is not null)`),
     // One UTR can back only one live order.
     uniqueIndex("online_orders_utr_uq")
       .on(sql`upper(${t.utr})`)
-      .where(sql`${t.utr} is not null and ${t.status} in ('payment_submitted','paid','ready','collected')`),
+      .where(sql`${t.utr} is not null and ${t.status} in ('payment_submitted','paid','confirmed','ready','collected')`),
     // One coupon can sit on only one live order.
     uniqueIndex("online_orders_coupon_uq")
       .on(t.couponId)

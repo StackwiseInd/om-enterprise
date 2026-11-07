@@ -99,6 +99,13 @@
       "when": 1794029767645,
       "tag": "0013_email_otp",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794031325189,
+      "tag": "0014_order_confirm_profile_delete",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,8 @@ import type { OnlineOrderStatus } from "@/server/db/schema";
 export const ONLINE_ORDER_STATUS: Record<OnlineOrderStatus, { customer: string; staff: string; tone: "neutral" | "green" | "amber" | "red" }> = {
   awaiting_payment: { customer: "Waiting for payment", staff: "Waiting for payment", tone: "neutral" },
   payment_submitted: { customer: "Checking payment", staff: "Payment to check", tone: "amber" },
-  paid: { customer: "Order placed", staff: "Paid", tone: "green" },
+  paid: { customer: "Order placed", staff: "Paid · to confirm", tone: "green" },
+  confirmed: { customer: "Confirmed by the shop", staff: "Confirmed", tone: "green" },
   payment_failed: { customer: "Payment not found", staff: "Payment not found", tone: "red" },
   ready: { customer: "Ready for pickup", staff: "Ready for pickup", tone: "green" },
   collected: { customer: "Collected", staff: "Collected", tone: "neutral" },

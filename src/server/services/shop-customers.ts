@@ -21,12 +21,14 @@ export const CUSTOMER_FILTERS: CustomerFilter[] = ["all", "verified", "unverifie
 // Per customer, from their online orders: how many, how many are paid, what they have spent, when they last ordered.
 // Table names are written out (not column objects) because a single-table query leaves column names unqualified,
 // which would make these correlated subqueries compare the wrong columns.
-const PAID = sql.raw("('paid','ready','collected')");
-const ordersCount = sql<number>`(select count(*)::int from online_orders o where o.account_id = shop_accounts.id)`;
-const paidCount = sql<number>`(select count(*)::int from online_orders o where o.account_id = shop_accounts.id and o.status in ${PAID})`;
-const spent = sql<string>`(select coalesce(sum(o.total), 0)::text from online_orders o where o.account_id = shop_accounts.id and o.status in ${PAID})`;
-const lastOrderAt = sql<Date | null>`(select max(o.created_at) from online_orders o where o.account_id = shop_accounts.id)`;
-const hasPaid = sql`exists (select 1 from online_orders o where o.account_id = shop_accounts.id and o.status in ${PAID})`;
+const PAID = sql.raw("('paid','confirmed','ready','collected')");
+// Orders the Super Admin deleted are left out of every figure.
+const LIVE = sql.raw("o.deleted_at is null");
+const ordersCount = sql<number>`(select count(*)::int from online_orders o where o.account_id = shop_accounts.id and ${LIVE})`;
+const paidCount = sql<number>`(select count(*)::int from online_orders o where o.account_id = shop_accounts.id and ${LIVE} and o.status in ${PAID})`;
+const spent = sql<string>`(select coalesce(sum(o.total), 0)::text from online_orders o where o.account_id = shop_accounts.id and ${LIVE} and o.status in ${PAID})`;
+const lastOrderAt = sql<Date | null>`(select max(o.created_at) from online_orders o where o.account_id = shop_accounts.id and ${LIVE})`;
+const hasPaid = sql`exists (select 1 from online_orders o where o.account_id = shop_accounts.id and ${LIVE} and o.status in ${PAID})`;
 
 function where(filter: CustomerFilter, q?: string): SQL | undefined {
   const conds: (SQL | undefined)[] = [];
@@ -38,7 +40,17 @@ function where(filter: CustomerFilter, q?: string): SQL | undefined {
   if (term) {
     const like = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
     const digits = term.replace(/\D/g, "");
-    conds.push(or(ilike(shopAccounts.name, like), ilike(shopAccounts.email, like), ilike(shopAccounts.mobile, digits.length >= 3 ? `%${digits}%` : like)));
+    conds.push(
+      or(
+        ilike(shopAccounts.name, like),
+        ilike(shopAccounts.email, like),
+        ilike(shopAccounts.mobile, digits.length >= 3 ? `%${digits}%` : like),
+        ilike(shopAccounts.businessName, like),
+        ilike(shopAccounts.gstin, like),
+        ilike(shopAccounts.city, like),
+        ilike(shopAccounts.pincode, like),
+      ),
+    );
   }
   const real = conds.filter((c): c is SQL => !!c);
   return real.length ? and(...real) : undefined;
@@ -60,6 +72,8 @@ export async function listShopCustomers(actor: Actor, opts: { q?: string; filter
       isActive: shopAccounts.isActive,
       createdAt: shopAccounts.createdAt,
       lastLoginAt: shopAccounts.lastLoginAt,
+      businessName: shopAccounts.businessName,
+      city: shopAccounts.city,
       orders: ordersCount,
       paidOrders: paidCount,
       spent,
@@ -86,7 +100,7 @@ export async function shopCustomerStats(actor: Actor) {
       buyers: sql<number>`count(*) filter (where ${hasPaid})::int`,
     })
     .from(shopAccounts);
-  const [t] = await getDb().select({ spent: sql<string>`coalesce(sum(total), 0)::text` }).from(onlineOrders).where(sql`status in ${PAID}`);
+  const [t] = await getDb().select({ spent: sql<string>`coalesce(sum(total), 0)::text` }).from(onlineOrders).where(sql`status in ${PAID} and deleted_at is null`);
   return { ...s, spent: t.spent };
 }
 
@@ -116,6 +130,16 @@ export async function getShopCustomer(actor: Actor, id: string) {
       lockedUntil: shopAccounts.lockedUntil,
       lastLoginAt: shopAccounts.lastLoginAt,
       createdAt: shopAccounts.createdAt,
+      profileUpdatedAt: shopAccounts.profileUpdatedAt,
+      businessName: shopAccounts.businessName,
+      gstin: shopAccounts.gstin,
+      altMobile: shopAccounts.altMobile,
+      addressLine1: shopAccounts.addressLine1,
+      addressLine2: shopAccounts.addressLine2,
+      landmark: shopAccounts.landmark,
+      city: shopAccounts.city,
+      state: shopAccounts.state,
+      pincode: shopAccounts.pincode,
     })
     .from(shopAccounts)
     .where(eq(shopAccounts.id, id));
@@ -132,10 +156,10 @@ export async function getShopCustomer(actor: Actor, id: string) {
       items: sql<number>`(select count(*)::int from online_order_lines l where l.order_id = online_orders.id)`,
     })
     .from(onlineOrders)
-    .where(eq(onlineOrders.accountId, id))
+    .where(and(eq(onlineOrders.accountId, id), isNull(onlineOrders.deletedAt)))
     .orderBy(desc(onlineOrders.createdAt))
     .limit(100);
-  const paid = orders.filter((o) => ["paid", "ready", "collected"].includes(o.status));
+  const paid = orders.filter((o) => ["paid", "confirmed", "ready", "collected"].includes(o.status));
   const stats = {
     orders: orders.length,
     paidOrders: paid.length,

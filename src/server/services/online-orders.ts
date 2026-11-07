@@ -1,20 +1,22 @@
 import "server-only";
-import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb, type Tx } from "@/server/db/client";
 import { auditLogs, coupons, onlineOrderLines, onlineOrders, users, type OnlineOrderStatus } from "@/server/db/schema";
 import { audit } from "@/server/audit";
-import { auditActorOf, requirePermission, type Actor } from "@/server/auth/actor";
+import { auditActorOf, requirePermission, requireSuperAdmin, type Actor } from "@/server/auth/actor";
 import { conflict, invalid, notFound, precondition } from "@/server/errors";
 import { enforceRateLimit, hashIp } from "@/server/rate-limit";
 import { getSettings } from "@/server/settings";
 import { pricePublicCart } from "@/server/services/public-catalog";
 import { evaluateCoupon, releaseCoupon, type AppliedCoupon } from "@/server/services/coupons";
 import { customerAuditActor, type ShopAccount } from "@/server/services/shop-auth";
-import { GATEWAY_PAY_SECONDS, GATEWAY_TIMEOUT_REASON, gatewayEnabled, mayAskNow, openGatewayCheckout, reconcileOpenOrders, reconcileOrder, retryGatewayPayment, type CheckoutParams } from "@/server/services/online-payments";
+import { cancelAndRefund, GATEWAY_PAY_SECONDS, GATEWAY_TIMEOUT_REASON, gatewayEnabled, mayAskNow, openGatewayCheckout, reconcileOpenOrders, reconcileOrder, retryGatewayPayment, type CheckoutParams } from "@/server/services/online-payments";
 import { gatewayName, isGatewayMethod, type PaymentMethod } from "@/lib/gateway";
-import { hasReceipt, receiptCodeFor } from "@/server/services/online-receipt";
+import { customerDetailsOf, hasReceipt, receiptCodeFor } from "@/server/services/online-receipt";
 import { emailVerificationRequired } from "@/server/services/shop-otp";
+import { getMyProfile, orderDetailsFrom } from "@/server/services/shop-profile";
+import { deletePhrase } from "@/lib/delete-phrase";
 import { buildUpiUri, isValidUpiUtr } from "@/lib/india";
 import { D, formatPrice, m } from "@/lib/money";
 
@@ -35,7 +37,12 @@ const MAX_ORDER_TOTAL = D(100000);
 type Item = { variantId: string; quantity: string };
 type Client = { ip: string; userAgent: string };
 
-const LIVE: OnlineOrderStatus[] = ["awaiting_payment", "payment_submitted", "paid", "ready"];
+const LIVE: OnlineOrderStatus[] = ["awaiting_payment", "payment_submitted", "paid", "confirmed", "ready"];
+/** Paid and with the shop: the money is in, the items are not yet handed over. */
+const PAID_OPEN: OnlineOrderStatus[] = ["paid", "confirmed", "ready"];
+/** States in which a customer may still cancel the order themselves. Once the shop confirms it, they can't. */
+const CUSTOMER_CANCELLABLE: OnlineOrderStatus[] = ["awaiting_payment", "payment_failed", "paid"];
+const notDeleted = isNull(onlineOrders.deletedAt);
 
 /**
  * Orders whose time to pay has run out. A UPI-QR order becomes "expired". A Razorpay order becomes "failed"
@@ -102,6 +109,7 @@ export async function placeOnlineOrder(account: ShopAccount, input: { items: Ite
   const gateway = gatewayEnabled();
   const pay = gateway ? null : await upiConfig();
   const priced = await priceForCheckout(input.items);
+  const profile = await getMyProfile(account);
   const db = getDb();
   const placed = await db.transaction(async (tx) => {
     await expireStaleOrders(tx);
@@ -132,8 +140,10 @@ export async function placeOnlineOrder(account: ShopAccount, input: { items: Ite
       .values({
         orderNumber,
         accountId: account.id,
-        customerName: account.name,
+        customerName: profile.name,
         mobile: account.mobile,
+        customerEmail: profile.email,
+        customerDetails: orderDetailsFrom(profile),
         ...t,
         couponId: coupon?.id ?? null,
         couponCode: coupon?.code ?? null,
@@ -164,7 +174,7 @@ export async function placeOnlineOrder(account: ShopAccount, input: { items: Ite
       action: "online_order.place",
       entityType: "online_order",
       entityId: order.id,
-      summary: `Placed ${orderNumber}: ${priced.lines.length} items, ${formatPrice(t.subtotal)}${coupon ? ` − ${formatPrice(t.discount)} (code ${coupon.code})` : ""} = ${formatPrice(t.total)} to pay ${gateway ? "on Razorpay" : "by UPI QR"}`,
+      summary: `Placed ${orderNumber}: ${priced.lines.length} ${priced.lines.length === 1 ? "item" : "items"}, ${formatPrice(t.subtotal)}${coupon ? ` − ${formatPrice(t.discount)} (code ${coupon.code})` : ""} = ${formatPrice(t.total)} to pay ${gateway ? "on Razorpay" : "by UPI QR"}`,
       data: { subtotal: t.subtotal, discount: t.discount, total: t.total, couponCode: coupon?.code ?? null, method: gateway ? "razorpay" : "upi_manual" },
     });
     return { orderNumber, id: order.id };
@@ -191,7 +201,7 @@ export async function payMyOrder(account: ShopAccount, orderNumber: string, clie
 }
 
 async function findMyOrder(tx: Tx, account: ShopAccount, orderNumber: string, lock = false) {
-  const q = tx.select().from(onlineOrders).where(and(eq(onlineOrders.orderNumber, orderNumber), eq(onlineOrders.accountId, account.id)));
+  const q = tx.select().from(onlineOrders).where(and(eq(onlineOrders.orderNumber, orderNumber), eq(onlineOrders.accountId, account.id), notDeleted));
   const [o] = lock ? await q.for("update") : await q;
   if (!o) throw notFound("Order");
   return o;
@@ -213,7 +223,7 @@ export async function getMyOrder(account: ShopAccount, orderNumber: string) {
 export async function listMyOrders(account: ShopAccount) {
   const db = getDb();
   await db.transaction((tx) => expireStaleOrders(tx));
-  const rows = await db.select().from(onlineOrders).where(eq(onlineOrders.accountId, account.id)).orderBy(desc(onlineOrders.createdAt)).limit(50);
+  const rows = await db.select().from(onlineOrders).where(and(eq(onlineOrders.accountId, account.id), notDeleted)).orderBy(desc(onlineOrders.createdAt)).limit(50);
   return rows.map(publicOrder);
 }
 
@@ -234,7 +244,11 @@ function publicOrder(o: typeof onlineOrders.$inferSelect) {
     gatewayState: o.gatewayState,
     refundState: o.refundState,
     refundedAt: o.refundedAt?.toISOString() ?? null,
+    confirmedAt: o.confirmedAt?.toISOString() ?? null,
+    readyAt: o.readyAt?.toISOString() ?? null,
     collectedAt: o.collectedAt?.toISOString() ?? null,
+    /** Can the customer cancel it here (and, if paid, get the money back straight away)? */
+    canCancel: CUSTOMER_CANCELLABLE.includes(o.status) && (o.status !== "paid" || isGatewayMethod(o.paymentMethod)),
     /** The code printed on the payment receipt, for the shop to check. Only once the payment is confirmed. */
     receiptCode: hasReceipt(o.status) ? receiptCodeFor(o) : null,
     expiresAt: o.expiresAt.toISOString(),
@@ -269,7 +283,7 @@ export async function submitUtr(account: ShopAccount, orderNumber: string, rawUt
     const [dup] = await tx
       .select({ n: onlineOrders.orderNumber })
       .from(onlineOrders)
-      .where(and(sql`upper(${onlineOrders.utr}) = upper(${utr})`, inArray(onlineOrders.status, ["payment_submitted", "paid", "ready", "collected"])));
+      .where(and(sql`upper(${onlineOrders.utr}) = upper(${utr})`, inArray(onlineOrders.status, ["payment_submitted", "paid", "confirmed", "ready", "collected"])));
     if (dup || (await utrUsedAtCounter(tx, utr))) {
       await audit(tx, customerAuditActor(account, client), { action: "online_order.utr_rejected", entityType: "online_order", entityId: o.id, summary: `UTR ${utr} refused for ${o.orderNumber}: already used for another payment` });
       throw conflict("This UTR has already been used for another payment. Check the number, or contact the shop.");
@@ -285,17 +299,56 @@ export async function submitUtr(account: ShopAccount, orderNumber: string, rawUt
   });
 }
 
-export async function cancelMyOrder(account: ShopAccount, orderNumber: string, client: Client) {
+/**
+ * The customer cancels their order. Before paying it simply closes. Once paid on Razorpay, and until the shop
+ * confirms the order, it closes and the full amount goes back to the customer's payment method at once.
+ * After the shop confirms it, only the shop can cancel it.
+ */
+export async function cancelMyOrder(account: ShopAccount, orderNumber: string, client: Client, input: { reason?: string | null } = {}) {
+  await enforceRateLimit(`cancel-order:${account.id}`, 20, 60 * 60, "Too many attempts. Please wait a little.");
   const first = await findMyOrder(getDb(), account, orderNumber);
   // A gateway payment may have just gone through: ask before cancelling.
   if (isGatewayMethod(first.paymentMethod)) await reconcileOrder(first.id, { force: await mayAskNow(account.id) });
-  await getDb().transaction(async (tx) => {
+  const reason = input.reason?.trim().slice(0, 200) || null;
+  const outcome = await getDb().transaction(async (tx) => {
     const o = await findMyOrder(tx, account, orderNumber, true);
-    if (o.status !== "awaiting_payment") throw conflict("Only an order that hasn't been paid can be cancelled here. Please contact the shop.");
-    await tx.update(onlineOrders).set({ status: "cancelled", cancelledAt: new Date(), cancelReason: "Cancelled by the customer", updatedAt: new Date() }).where(eq(onlineOrders.id, o.id));
+    if (o.status === "paid") {
+      if (!reason || reason.length < 3) throw invalid("Please tell us briefly why you're cancelling");
+      return { refund: o.id };
+    }
+    if (!["awaiting_payment", "payment_failed"].includes(o.status)) {
+      throw conflict(
+        ["confirmed", "ready", "collected"].includes(o.status)
+          ? "The shop has already confirmed this order, so it can't be changed or cancelled here. Please call the shop."
+          : o.status === "payment_submitted"
+            ? "The shop is checking your UPI payment. Please call the shop to cancel; they will refund you."
+            : "This order is already closed.",
+      );
+    }
+    const why = reason ? `Cancelled by the customer: ${reason}` : "Cancelled by the customer";
+    await tx.update(onlineOrders).set({ status: "cancelled", cancelledAt: new Date(), cancelReason: why, updatedAt: new Date() }).where(eq(onlineOrders.id, o.id));
     await releaseCoupon(tx, o.couponId);
-    await audit(tx, customerAuditActor(account, client), { action: "online_order.cancel", entityType: "online_order", entityId: o.id, summary: `${o.orderNumber} cancelled by the customer before paying` });
+    await audit(tx, customerAuditActor(account, client), {
+      action: "online_order.cancel",
+      entityType: "online_order",
+      entityId: o.id,
+      summary: `${o.orderNumber} cancelled by the customer before paying${reason ? `: ${reason}` : ""}`,
+      data: { orderNumber: o.orderNumber, previousStatus: o.status, total: o.total, reason },
+    });
+    return { refund: null };
   });
+  if (outcome.refund) {
+    await cancelAndRefund(outcome.refund, {
+      by: customerAuditActor(account, client),
+      staffId: null,
+      reason: reason ? `Cancelled by the customer: ${reason}` : "Cancelled by the customer",
+      allowed: ["paid"],
+      who: "customer",
+      accountId: account.id,
+    });
+    return { status: "refunding" as const };
+  }
+  return { status: "cancelled" as const };
 }
 
 /* ------------------------------------------------------------------ */
@@ -315,7 +368,7 @@ export async function listOnlineOrders(actor: Actor, status?: OnlineOrderStatus 
   const bySearch = like
     ? or(ilike(onlineOrders.orderNumber, like), ilike(onlineOrders.customerName, like), ilike(onlineOrders.mobile, digits.length >= 3 ? `%${digits}%` : like), ilike(onlineOrders.gatewayTransactionId, like), ilike(onlineOrders.utr, like), ilike(onlineOrders.gatewayUtr, like), ilike(onlineOrders.couponCode, like))
     : undefined;
-  const where = byStatus && bySearch ? and(byStatus, bySearch) : (byStatus ?? bySearch);
+  const where = and(notDeleted, byStatus, bySearch);
   return db
     .select({ o: onlineOrders, itemCount: sql<number>`(select count(*)::int from online_order_lines l where l.order_id = "online_orders"."id")` })
     .from(onlineOrders)
@@ -325,7 +378,7 @@ export async function listOnlineOrders(actor: Actor, status?: OnlineOrderStatus 
 }
 
 export async function onlineOrdersToVerify() {
-  const [r] = await getDb().select({ c: sql<number>`count(*)::int` }).from(onlineOrders).where(eq(onlineOrders.status, "payment_submitted"));
+  const [r] = await getDb().select({ c: sql<number>`count(*)::int` }).from(onlineOrders).where(and(eq(onlineOrders.status, "payment_submitted"), notDeleted));
   return r.c;
 }
 
@@ -340,7 +393,7 @@ export async function getOnlineOrder(actor: Actor, id: string) {
     .from(onlineOrders)
     .leftJoin(users, eq(users.id, onlineOrders.verifiedBy))
     .leftJoin(handler, eq(handler.id, onlineOrders.handledBy))
-    .where(eq(onlineOrders.id, id));
+    .where(and(eq(onlineOrders.id, id), notDeleted));
   if (!row) throw notFound("Online order");
   const lines = await db.select().from(onlineOrderLines).where(eq(onlineOrderLines.orderId, id));
   const history = await db
@@ -349,11 +402,13 @@ export async function getOnlineOrder(actor: Actor, id: string) {
     .where(and(eq(auditLogs.entityType, "online_order"), eq(auditLogs.entityId, id)))
     .orderBy(desc(auditLogs.at))
     .limit(100);
-  return { order: { ...row.o, ipHash: undefined }, verifiedByName: row.verifiedByName, handledByName: row.handledByName, receiptCode: hasReceipt(row.o.status) ? receiptCodeFor(row.o) : null, lines, history };
+  const confirmer = row.o.confirmedBy ? (await db.select({ n: users.displayName }).from(users).where(eq(users.id, row.o.confirmedBy)))[0]?.n ?? null : null;
+  const customerDetails = await customerDetailsOf(row.o);
+  return { order: { ...row.o, ipHash: undefined }, customerDetails, confirmedByName: confirmer, verifiedByName: row.verifiedByName, handledByName: row.handledByName, receiptCode: hasReceipt(row.o.status) ? receiptCodeFor(row.o) : null, lines, history };
 }
 
 async function lockOrder(tx: Tx, id: string) {
-  const [o] = await tx.select().from(onlineOrders).where(eq(onlineOrders.id, id)).for("update");
+  const [o] = await tx.select().from(onlineOrders).where(and(eq(onlineOrders.id, id), notDeleted)).for("update");
   if (!o) throw notFound("Online order");
   return o;
 }
@@ -395,32 +450,89 @@ export async function failOnlinePayment(actor: Actor, id: string, input: { reaso
   });
 }
 
-export async function setOnlineOrderStatus(actor: Actor, id: string, input: { status: "ready" | "collected" | "cancelled"; reason?: string | null }) {
+export type StaffOrderStep = "confirmed" | "ready" | "collected" | "cancelled";
+
+/**
+ * Staff move a paid order along: confirmed (the shop accepts it; the customer can no longer cancel), ready
+ * for pickup, handed over. Ready and handed over also count as confirmed. Unpaid orders can be cancelled.
+ */
+export async function setOnlineOrderStatus(actor: Actor, id: string, input: { status: StaffOrderStep; reason?: string | null }) {
   requirePermission(actor, "orders.manage");
   return getDb().transaction(async (tx) => {
     const o = await lockOrder(tx, id);
     const now = new Date();
-    if (input.status === "ready") {
-      if (o.status !== "paid") throw conflict("Only a paid order can be marked ready");
-      await tx.update(onlineOrders).set({ status: "ready", readyAt: now, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
+    const confirm = o.confirmedAt ? {} : { confirmedAt: now, confirmedBy: actor.id };
+    const note = input.reason?.trim().slice(0, 300) || null;
+    if (input.status === "confirmed") {
+      if (o.status !== "paid") throw conflict(o.status === "confirmed" || o.status === "ready" ? "This order is already confirmed" : "Only a paid order can be confirmed");
+      await tx.update(onlineOrders).set({ status: "confirmed", ...confirm, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
+    } else if (input.status === "ready") {
+      if (!["paid", "confirmed"].includes(o.status)) throw conflict("Only a paid order can be marked ready");
+      await tx.update(onlineOrders).set({ status: "ready", ...confirm, readyAt: now, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
     } else if (input.status === "collected") {
-      if (!["paid", "ready"].includes(o.status)) throw conflict("Only a paid order can be handed over");
+      if (!PAID_OPEN.includes(o.status)) throw conflict("Only a paid order can be handed over");
       // The remarks are the staff's own record of the handover ("took 2 tees and the glue, bill no. …").
-      await tx.update(onlineOrders).set({ status: "collected", collectedAt: now, collectNote: input.reason?.trim().slice(0, 300) || null, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
+      await tx.update(onlineOrders).set({ status: "collected", ...confirm, collectedAt: now, collectNote: note, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
     } else {
-      if (!["awaiting_payment", "payment_submitted", "payment_failed"].includes(o.status)) throw conflict("A paid order can't be cancelled here; refund it at the counter first");
-      const reason = input.reason?.trim();
-      if (!reason) throw invalid("Say why the order is cancelled");
-      await tx.update(onlineOrders).set({ status: "cancelled", cancelledAt: now, cancelReason: reason.slice(0, 300), handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
+      if (!["awaiting_payment", "payment_submitted", "payment_failed"].includes(o.status)) throw conflict("A paid order can't be cancelled here; use Cancel and refund");
+      if (!note) throw invalid("Say why the order is cancelled");
+      await tx.update(onlineOrders).set({ status: "cancelled", cancelledAt: now, cancelReason: note, handledBy: actor.id, updatedAt: now }).where(eq(onlineOrders.id, id));
       await releaseCoupon(tx, o.couponId);
     }
+    const words = { confirmed: "confirmed (customer can no longer cancel)", ready: "ready for pickup", collected: "handed over to the customer", cancelled: "cancelled" }[input.status];
     await audit(tx, auditActorOf(actor), {
       action: `online_order.${input.status}`,
       entityType: "online_order",
       entityId: id,
-      summary: `${o.orderNumber}: ${o.status} → ${input.status}${input.reason ? ` (${input.reason.trim()})` : ""}`,
+      summary: `${o.orderNumber} ${words}${note ? ` (${note})` : ""}`,
+      data: { orderNumber: o.orderNumber, from: o.status, to: input.status, note },
     });
   });
+}
+
+/**
+ * The Super Admin deletes an online order, at any stage once no money is left in between: unpaid (it is cancelled
+ * first), closed, refunded, or already collected. A paid order the customer hasn't collected is refunded first.
+ * The order disappears from every list, page and total; its row is kept (marked deleted) so a late payment or
+ * refund from Razorpay still finds it, and the log keeps everything that was on it.
+ */
+export async function deleteOnlineOrder(actor: Actor, id: string, input: { confirm: string; reason?: string | null }) {
+  requireSuperAdmin(actor);
+  if (input.confirm.trim() !== deletePhrase(actor.username)) throw invalid(`Paste ${deletePhrase(actor.username)} exactly to confirm`);
+  const reason = input.reason?.trim().slice(0, 300) || "Deleted by the Super Admin";
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    const [o] = await tx.select().from(onlineOrders).where(eq(onlineOrders.id, id)).for("update");
+    if (!o) throw notFound("Online order");
+    if (o.deletedAt) throw conflict(`${o.orderNumber} is already deleted`);
+    const blocked = onlineOrderDeleteBlocked(o.status);
+    if (blocked) throw conflict(`${o.orderNumber}: ${blocked}`);
+    const now = new Date();
+    const lines = await tx.select().from(onlineOrderLines).where(eq(onlineOrderLines.orderId, id));
+    // An order still open for payment is closed first, so a payment can't land on a deleted order unnoticed.
+    const closeFirst = o.status === "awaiting_payment";
+    if (closeFirst) await releaseCoupon(tx, o.couponId);
+    await tx
+      .update(onlineOrders)
+      .set({ ...(closeFirst ? { status: "cancelled" as const, cancelledAt: now, cancelReason: `Deleted: ${reason}` } : {}), deletedAt: now, deletedBy: actor.id, deleteReason: reason, updatedAt: now })
+      .where(eq(onlineOrders.id, id));
+    await audit(tx, auditActorOf(actor), {
+      action: "online_order.deleted",
+      entityType: "online_order",
+      entityId: id,
+      summary: `Deleted ${o.orderNumber} (${o.customerName}, ${formatPrice(o.total)}, was ${o.status}): ${reason}`,
+      data: { reason, order: { ...o, ipHash: undefined }, lines },
+    });
+    return { orderNumber: o.orderNumber };
+  });
+}
+
+/** Why an online order can't be deleted yet, or null. */
+export function onlineOrderDeleteBlocked(status: OnlineOrderStatus): string | null {
+  if (PAID_OPEN.includes(status)) return "The customer has paid and hasn't collected the items. Cancel and refund it first, or hand it over, then delete it.";
+  if (status === "payment_submitted") return "A UPI payment is waiting to be checked. Mark it received or not found first.";
+  if (status === "refunding") return "A refund is still in progress. Delete it once the refund completes.";
+  return null;
 }
 
 export { LIVE as LIVE_ONLINE_ORDER_STATUSES };

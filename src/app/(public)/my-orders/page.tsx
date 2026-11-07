@@ -6,10 +6,11 @@ import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/page";
 import { Container, PageIntro } from "@/components/public/section";
-import { ShopSignOut } from "@/components/public/shop-sign-out";
+import { AccountTabs } from "@/components/public/account-tabs";
 import { getShopAccount } from "@/server/auth/shop-session";
 import { listMyOrders } from "@/server/services/online-orders";
-import { formatPhone } from "@/lib/india";
+import { getMyProfile } from "@/server/services/shop-profile";
+import { profileComplete } from "@/lib/shop-profile";
 import { formatPrice } from "@/lib/money";
 import { ONLINE_ORDER_STATUS } from "@/lib/online-order-status";
 
@@ -31,19 +32,22 @@ export default function MyOrdersPage() {
 async function Content() {
   const account = await getShopAccount();
   if (!account) redirect("/sign-in?next=/my-orders");
-  const orders = await listMyOrders(account);
+  const [orders, profile] = await Promise.all([listMyOrders(account), getMyProfile(account)]);
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-sm text-navy-600">
-        <span>
-          Signed in as <span className="font-semibold text-navy-950">{account.name}</span> · <span className="tabular">{formatPhone(account.mobile)}</span>
-        </span>
-        <ShopSignOut />
-      </div>
+      <AccountTabs active="orders" name={account.name} mobile={account.mobile} />
+      {!profileComplete(profile) && (
+        <Link href="/my-profile" className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-gold-300 bg-gold-50/60 px-4 py-3 text-sm text-navy-800 transition-colors hover:bg-gold-50">
+          <span>
+            <span className="font-semibold text-navy-950">Add your address</span> (and GSTIN if you buy for a business) so it prints on your receipts.
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-navy-400" />
+        </Link>
+      )}
       {orders.length === 0 ? (
         <div className="blueprint rounded-xl border border-navy-200 p-10 text-center">
           <p className="font-semibold text-navy-950">No orders yet</p>
-          <p className="mt-1 text-sm text-navy-500">Add products to your cart and check out to pay by UPI.</p>
+          <p className="mt-1 text-sm text-navy-500">Add products to your cart and check out to pay online.</p>
           <Link href="/products" className="mt-4 inline-flex h-10 items-center rounded-lg bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800">Browse products</Link>
         </div>
       ) : (

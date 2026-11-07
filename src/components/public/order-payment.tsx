@@ -1,8 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCircle2, Clock3, Download, FileText, MessageCircle, Phone, Smartphone, Store, XCircle } from "lucide-react";
+import { Check, CheckCircle2, ClipboardCheck, Clock3, Download, FileText, MessageCircle, Phone, Smartphone, Store, Undo2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
@@ -31,7 +30,10 @@ interface OrderData {
     gatewayState: string | null;
     refundState: string | null;
     refundedAt: string | null;
+    confirmedAt: string | null;
+    readyAt: string | null;
     collectedAt: string | null;
+    canCancel: boolean;
     receiptCode: string | null;
     expiresAt: string;
     utr: string | null;
@@ -70,7 +72,6 @@ function useCountdown(until: string, active: boolean) {
 }
 
 export function OrderPayment({ initial, shop, autoPay = false }: { initial: OrderData; shop: Shop; autoPay?: boolean }) {
-  const router = useRouter();
   const [data, setData] = useState(initial);
   const o = data.order;
   const refresh = () => {
@@ -91,10 +92,10 @@ export function OrderPayment({ initial, shop, autoPay = false }: { initial: Orde
     return () => clearInterval(t);
   }, [o.status, o.orderNumber, gateway]);
 
-  const steps = gateway ? [`Pay on ${gw}`, "Payment confirmed", "Collect"] : ["Pay by UPI", "Send UTR", "Shop confirms", "Collect"];
+  const steps = gateway ? [`Pay on ${gw}`, "Paid", "Shop confirms", "Collect"] : ["Pay by UPI", "Send UTR", "Shop confirms", "Collect"];
   const step = gateway
-    ? o.status === "awaiting_payment" || o.status === "payment_submitted" ? 0 : ["paid", "ready"].includes(o.status) ? 1 : o.status === "collected" ? 2 : -1
-    : o.status === "awaiting_payment" ? 0 : o.status === "payment_submitted" ? 1 : ["paid", "ready"].includes(o.status) ? 2 : o.status === "collected" ? 3 : -1;
+    ? o.status === "awaiting_payment" || o.status === "payment_submitted" ? 0 : o.status === "paid" ? 1 : ["confirmed", "ready"].includes(o.status) ? 2 : o.status === "collected" ? 3 : -1
+    : o.status === "awaiting_payment" ? 0 : o.status === "payment_submitted" ? 1 : ["paid", "confirmed", "ready"].includes(o.status) ? 2 : o.status === "collected" ? 3 : -1;
   const paidVia = gateway ? `on ${gw}${o.gatewayPaymentMode ? ` (${paymentModeLabel(o.gatewayPaymentMode)})` : ""}` : `by UPI (UTR ${o.utr})`;
   const wa = shop.whatsapp ? whatsappLink(shop.whatsapp, `Hello ${shop.name}, about my online order ${o.orderNumber}${o.utr ? ` (UTR ${o.utr})` : ""}.`) : null;
 
@@ -102,7 +103,7 @@ export function OrderPayment({ initial, shop, autoPay = false }: { initial: Orde
     <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
       <section className="rounded-xl border border-navy-200 bg-white">
         {step >= 0 && (
-          <ol className={cn("grid border-b border-navy-100 text-center text-[12px] sm:text-[13px]", steps.length === 4 ? "grid-cols-4" : "grid-cols-3")}>
+          <ol className="grid grid-cols-4 border-b border-navy-100 text-center text-[12px] sm:text-[13px]">
             {steps.map((s, i) => (
               <li key={s} className={cn("flex flex-col items-center gap-1.5 px-1 py-3.5", i === step ? "font-semibold text-navy-950" : i < step ? "text-emerald-800" : "text-navy-400")}>
                 <span className={cn("flex h-6 w-6 items-center justify-center rounded-full border", i < step ? "border-emerald-600 bg-emerald-600 text-white" : i === step ? "border-navy-900 text-navy-950" : "border-navy-200")}>
@@ -114,8 +115,8 @@ export function OrderPayment({ initial, shop, autoPay = false }: { initial: Orde
           </ol>
         )}
         <div className="p-5 sm:p-7">
-          {o.status === "awaiting_payment" && !gateway && <PayNow data={data} onSubmitted={setData} onCancelled={() => router.refresh()} />}
-          {o.status === "awaiting_payment" && gateway && <GatewayPay data={data} autoPay={autoPay} onCancelled={() => router.refresh()} onChanged={refresh} />}
+          {o.status === "awaiting_payment" && !gateway && <PayNow data={data} onSubmitted={setData} onCancelled={refresh} />}
+          {o.status === "awaiting_payment" && gateway && <GatewayPay data={data} autoPay={autoPay} onCancelled={refresh} onChanged={refresh} />}
           {o.status === "payment_submitted" && gateway && (
             <StatusBlock icon={<Clock3 className="h-6 w-6 text-amber-600" />} title="We're checking your payment">
               <p>{gw} reported a payment that we need to check by hand. The shop will confirm it shortly; this page updates by itself.</p>
@@ -131,10 +132,30 @@ export function OrderPayment({ initial, shop, autoPay = false }: { initial: Orde
               </div>
             </StatusBlock>
           )}
-          {(o.status === "paid" || o.status === "ready") && (
-            <StatusBlock icon={<CheckCircle2 className="h-7 w-7 text-emerald-600" />} title={o.status === "ready" ? "Your order is ready for pickup" : "Payment verified. Your order is placed."}>
+          {o.status === "paid" && (
+            <StatusBlock icon={<CheckCircle2 className="h-7 w-7 text-emerald-600" />} title="Payment received. Your order is placed.">
               <p>
-                We received {formatPrice(o.total)} {paidVia}. {o.status === "ready" ? "Your items are packed and waiting at the counter." : "We'll keep your items ready at the counter."}
+                We received {formatPrice(o.total)} {paidVia}. The shop now checks your items and confirms the order; this page shows it as soon as they do.
+              </p>
+              {o.canCancel ? (
+                <CancelOrder orderNumber={o.orderNumber} paid total={o.total} gateway={gw} onDone={refresh} />
+              ) : (
+                <p className="mt-3 text-sm text-navy-500">To change or cancel this order, please call or WhatsApp the shop before it is confirmed.</p>
+              )}
+              <ReceiptCard order={o} />
+              <Pickup shop={shop} orderNumber={o.orderNumber} />
+            </StatusBlock>
+          )}
+          {(o.status === "confirmed" || o.status === "ready") && (
+            <StatusBlock
+              icon={o.status === "ready" ? <CheckCircle2 className="h-7 w-7 text-emerald-600" /> : <ClipboardCheck className="h-7 w-7 text-emerald-600" />}
+              title={o.status === "ready" ? "Your order is ready for pickup" : "The shop has confirmed your order"}
+            >
+              <p>
+                We received {formatPrice(o.total)} {paidVia}. {o.status === "ready" ? "Your items are packed and waiting at the counter." : "We're getting your items ready at the counter. We'll show it here when they're packed."}
+              </p>
+              <p className="mt-2 text-sm text-navy-500">
+                Confirmed{o.confirmedAt ? ` on ${time(o.confirmedAt)}` : ""}. From here the order can&apos;t be changed or cancelled online; for anything you need, call or WhatsApp the shop.
               </p>
               <ReceiptCard order={o} />
               <Pickup shop={shop} orderNumber={o.orderNumber} />
@@ -151,6 +172,7 @@ export function OrderPayment({ initial, shop, autoPay = false }: { initial: Orde
               {o.failureReason && <p className="font-medium text-navy-900">{o.failureReason}</p>}
               <p className="mt-2">No money was taken for this attempt. You can try again; if money did leave your account, {gw} returns it, or contact the shop.</p>
               <RetryPay orderNumber={o.orderNumber} total={o.total} onChanged={refresh} />
+              {o.canCancel && <CancelOrder orderNumber={o.orderNumber} paid={false} total={o.total} gateway={gw} onDone={refresh} />}
             </StatusBlock>
           )}
           {(o.status === "refunding" || o.status === "refunded") && (
@@ -445,6 +467,72 @@ function PayNow({ data, onSubmitted, onCancelled }: { data: OrderData; onSubmitt
       <button type="button" onClick={cancel} className="mt-4 text-[13px] font-medium text-navy-500 underline-offset-4 hover:text-navy-900 hover:underline">
         Cancel this order
       </button>
+    </div>
+  );
+}
+
+const CANCEL_REASONS = ["Changed my mind", "Ordered by mistake", "Wrong item or quantity", "Will buy at the shop instead", "Taking too long"];
+
+/**
+ * The customer cancels: before paying it simply closes; once paid (and until the shop confirms the order)
+ * the full amount goes back to the account they paid from. Asks for a reason and a second tap first.
+ */
+function CancelOrder({ orderNumber, paid, total, gateway, onDone }: { orderNumber: string; paid: boolean; total: string; gateway: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [other, setOther] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const finalReason = reason === "Other" ? other.trim() : reason;
+  const submit = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await apiFetch(`/api/shop/orders/${orderNumber}/cancel`, { body: { reason: finalReason || null } });
+      setOpen(false);
+      onDone();
+    } catch (err) {
+      setProblem(errorMessage(err));
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <div className="mt-4 rounded-lg border border-navy-100 bg-paper/60 px-4 py-3 text-sm text-navy-600">
+        {paid ? <>Changed your mind? You can cancel until the shop confirms the order, and get the full {formatPrice(total)} back.</> : <>Don&apos;t want this order any more?</>}{" "}
+        <button type="button" onClick={() => setOpen(true)} className="font-semibold text-navy-950 underline underline-offset-4 hover:text-red-700">
+          {paid ? "Cancel and get a refund" : "Cancel this order"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-4 space-y-3 rounded-lg border border-red-200 bg-red-50/40 p-4 text-sm" role="group" aria-label="Cancel this order">
+      <p className="font-semibold text-navy-950">{paid ? `Cancel ${orderNumber} and refund ${formatPrice(total)}?` : `Cancel ${orderNumber}?`}</p>
+      {paid && <p className="text-navy-600">The refund goes back through {gateway} to the account, card or UPI app you paid from. Banks usually show it in 5–7 working days.</p>}
+      <fieldset>
+        <legend className="mb-2 text-[13px] font-medium text-navy-700">Why are you cancelling?</legend>
+        <div className="flex flex-wrap gap-2">
+          {[...CANCEL_REASONS, "Other"].map((r) => (
+            <label key={r} className={cn("cursor-pointer rounded-full border px-3 py-1.5 text-[13px] transition-colors", reason === r ? "border-navy-900 bg-navy-900 text-white" : "border-navy-200 bg-white text-navy-800 hover:border-navy-400")}>
+              <input type="radio" name={`cancel-${orderNumber}`} value={r} checked={reason === r} onChange={() => setReason(r)} className="sr-only" />
+              {r}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {reason === "Other" && <Input aria-label="Your reason" value={other} onChange={(e) => setOther(e.target.value)} maxLength={200} placeholder="Tell us briefly" />}
+      {problem && <Alert tone="danger">{problem}</Alert>}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="danger" loading={busy} disabled={!finalReason || finalReason.length < 3} onClick={submit} icon={<Undo2 className="h-4 w-4" />}>
+          {paid ? `Cancel and refund ${formatPrice(total)}` : "Cancel order"}
+        </Button>
+        <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
+          Keep my order
+        </Button>
+      </div>
     </div>
   );
 }

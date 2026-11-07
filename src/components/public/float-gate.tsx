@@ -8,6 +8,6 @@ import { usePathname } from "next/navigation";
  */
 export function FloatGate({ children }: { children: ReactNode }) {
   const path = usePathname() ?? "";
-  const ownActions = ["/enquiry", "/checkout", "/my-orders", "/sign-in", "/sign-up"].some((p) => path.startsWith(p));
+  const ownActions = ["/enquiry", "/checkout", "/my-orders", "/my-profile", "/sign-in", "/sign-up"].some((p) => path.startsWith(p));
   return ownActions || /^\/products\/[^/]+\/?$/.test(path) ? null : children;
 }

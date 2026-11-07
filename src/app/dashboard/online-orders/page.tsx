@@ -1,6 +1,8 @@
 import { gatewayName, isGatewayMethod } from "@/lib/gateway";
 import { Suspense } from "react";
 import Link from "next/link";
+import { ScrollText } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 import { requirePageActor } from "@/server/auth/session";
 import { can } from "@/server/auth/actor";
 import { listOnlineOrders } from "@/server/services/online-orders";
@@ -37,7 +39,14 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
       <PageHeader
         eyebrow="Sales"
         title="Online orders"
-        description="Paid online, collected at the store. Razorpay payments are confirmed by Razorpay itself; UPI QR payments count only after someone checks the credit in the shop's bank or UPI app."
+        description="Paid online, collected at the store. Razorpay payments are confirmed by Razorpay itself; UPI QR payments count only after someone checks the credit in the shop's bank or UPI app. Confirm a paid order once you accept it: until then the customer can cancel it for an automatic refund."
+        actions={
+          actor.isSuperAdmin ? (
+            <Link href="/admin/logs/online-orders" className={buttonClass("outline")}>
+              <ScrollText className="h-4 w-4" /> Online orders log
+            </Link>
+          ) : undefined
+        }
       />
       <FilterBar
         fields={[
@@ -49,7 +58,8 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
             options: [
               { value: "", label: "All" },
               { value: "to_verify", label: "Payment to check" },
-              { value: "paid", label: "Paid" },
+              { value: "paid", label: "Paid · to confirm" },
+              { value: "confirmed", label: "Confirmed" },
               { value: "ready", label: "Ready for pickup" },
               { value: "collected", label: "Collected" },
               { value: "awaiting_payment", label: "Waiting for payment" },

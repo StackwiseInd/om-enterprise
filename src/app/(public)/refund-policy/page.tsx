@@ -15,7 +15,8 @@ const sections = (b: Business) => [
       <Bullets
         items={[
           "Cancel an unpaid order any time: nothing is charged.",
-          "Cancel a paid order before you collect it: you get the full amount back, with no cancellation charge.",
+          "Cancel a paid order yourself, from its page in My orders, until the shop confirms it: the full amount goes back to you straight away, with no cancellation charge.",
+          "Once the shop has confirmed your order, it can't be changed or cancelled online. Call or WhatsApp us and we'll help.",
           "Refunds of online payments go back to the same card, bank account or UPI ID you paid from, through Razorpay, usually within 5–7 working days.",
           "Your statutory rights as a consumer are not affected by anything on this page.",
         ]}
@@ -33,8 +34,10 @@ const sections = (b: Business) => [
     body: (
       <>
         <p>
-          If you no longer want a paid order and haven&apos;t collected it yet, {contactLine(b)} with your order number. We cancel the order and refund the <strong>full amount</strong> you paid. There is no cancellation charge.
+          Until we confirm your order, you can cancel it yourself: open it in <PLink href="/my-orders">My orders</PLink>, choose <strong>Cancel and get a refund</strong> and tell us why. The order closes at once and the <strong>full amount</strong> you paid goes back through Razorpay. There is no cancellation charge.
         </p>
+        <p>
+          When we confirm an order, we start keeping the items for you, so from then on it can&apos;t be changed or cancelled online. If you still need to cancel a confirmed order you haven&apos;t collected, {contactLine(b)} with your order number and we refund the full amount.</p>
         <p>We may also cancel a paid order ourselves, with a full refund, if an item is no longer available and you don&apos;t want a replacement, if a price or product on the website was clearly wrong, or if we can&apos;t complete the order for any other reason of ours.</p>
       </>
     ),

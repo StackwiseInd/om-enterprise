@@ -8,6 +8,7 @@ import { gatewayName, isGatewayMethod } from "@/lib/gateway";
 import { whatsappLink, formatPhone } from "@/lib/india";
 import { formatINR } from "@/lib/money";
 import { ONLINE_ORDER_STATUS } from "@/lib/online-order-status";
+import { profileAddressLines } from "@/lib/shop-profile";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
 import { EmptyState, PageHeader, PageSkeleton } from "@/components/ui/page";
 import { Badge } from "@/components/ui/badge";
@@ -114,7 +115,27 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
           <Card>
-            <CardHeader title="History" description="Sign-up, verification and staff actions, from the audit log." />
+            <CardHeader
+              title="Profile"
+              description={c.profileUpdatedAt ? <>What the customer keeps on My profile. Updated <DateTime value={c.profileUpdatedAt} />.</> : "What the customer keeps on My profile. Not filled in yet."}
+            />
+            <CardBody>
+              <dl>
+                <Row label="Business">{c.businessName ?? <span className="text-navy-300">—</span>}</Row>
+                <Row label="GSTIN">{c.gstin ? <span className="tabular">{c.gstin}</span> : <span className="text-navy-300">—</span>}</Row>
+                <Row label="Other phone">{c.altMobile ? <a href={`tel:+91${c.altMobile}`} className={codeLink}>{formatPhone(c.altMobile)}</a> : <span className="text-navy-300">—</span>}</Row>
+                <Row label="Address">
+                  {profileAddressLines(c).length ? (
+                    <span className="block whitespace-pre-line">{profileAddressLines(c).join("\n")}</span>
+                  ) : (
+                    <span className="text-navy-300">—</span>
+                  )}
+                </Row>
+              </dl>
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader title="History" description="Sign-up, profile changes, verification and staff actions, from the audit log." />
             <CardBody>
               {history.length === 0 ? (
                 <p className="text-sm text-navy-500">Nothing recorded yet.</p>

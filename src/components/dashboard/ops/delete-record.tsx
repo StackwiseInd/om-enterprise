@@ -25,7 +25,7 @@ export function DeleteRecord({
   size = "md",
   blocked,
 }: {
-  kind: "sale" | "quotation";
+  kind: "sale" | "quotation" | "online_order";
   id: string;
   /** What is being deleted, as people know it: "S000019", "QT/26-27/00003". */
   name: string;
@@ -48,7 +48,8 @@ export function DeleteRecord({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const matches = typed.trim() === phrase;
-  const label = kind === "sale" ? `Delete sale ${name}` : `Delete quotation ${name}`;
+  const noun = { sale: "sale", quotation: "quotation", online_order: "online order" }[kind];
+  const label = `Delete ${noun} ${name}`;
 
   const close = () => {
     if (busy) return;
@@ -69,7 +70,8 @@ export function DeleteRecord({
     setBusy(true);
     setError(null);
     try {
-      await apiFetch(kind === "sale" ? `/api/sales/${id}/delete` : `/api/documents/${id}/delete`, { method: "POST", body: { confirm: typed.trim(), reason: reason.trim() || null } });
+      const path = { sale: `/api/sales/${id}/delete`, quotation: `/api/documents/${id}/delete`, online_order: `/api/admin/online-orders/${id}/delete` }[kind];
+      await apiFetch(path, { method: "POST", body: { confirm: typed.trim(), reason: reason.trim() || null } });
       toast(`${name} deleted`);
       setOpen(false);
       if (afterDelete) router.push(afterDelete);
@@ -95,7 +97,7 @@ export function DeleteRecord({
         </button>
       ) : (
         <Button variant="outline" size={size} className="text-red-700" icon={<Trash2 className="h-4 w-4" />} onClick={() => setOpen(true)}>
-          {kind === "sale" ? "Delete sale" : "Delete quotation"}
+          Delete {noun}
         </Button>
       )}
       <Dialog
@@ -127,11 +129,17 @@ export function DeleteRecord({
           <div className="space-y-4 text-sm text-navy-800">
             {error && <Alert tone="danger">{error}</Alert>}
             <ul className="list-disc space-y-1 pl-5 leading-relaxed">
-              <li>{kind === "sale" ? `${name} disappears from sales, bills, payments, customers and reports.` : `${name} disappears from the sale and the documents list, and its share link stops working.`}</li>
+              <li>
+                {kind === "sale"
+                  ? `${name} disappears from sales, bills, payments, customers and reports.`
+                  : kind === "online_order"
+                    ? `${name} disappears from online orders, the customer's My orders, customer totals and the dashboard.`
+                    : `${name} disappears from the sale and the documents list, and its share link stops working.`}
+              </li>
               {consequences.map((c) => (
                 <li key={c}>{c}</li>
               ))}
-              <li>A record of what was deleted, by whom and when stays in the audit log.</li>
+              <li>{kind === "online_order" ? "Everything on the order (items, payment, customer, history) stays in the online orders log, with who deleted it, when and why." : "A record of what was deleted, by whom and when stays in the audit log."}</li>
             </ul>
             <div>
               <p className="text-navy-700">To confirm, copy this and paste it below:</p>

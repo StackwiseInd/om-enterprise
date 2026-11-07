@@ -307,6 +307,16 @@ export function HeaderClient({ categories, whatsapp, phone, addressShort, accoun
                   {account ? "My orders" : "Sign in"}
                   <ArrowRight className="h-4 w-4 text-navy-300" />
                 </Link>
+                {account && (
+                  <Link
+                    href="/my-profile"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center justify-between border-b border-navy-100 py-3 text-[17px] font-semibold text-navy-950"
+                  >
+                    My profile
+                    <ArrowRight className="h-4 w-4 text-navy-300" />
+                  </Link>
+                )}
               </nav>
               {top.length > 0 && (
                 <div className="mt-7">

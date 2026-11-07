@@ -1,8 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { and, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
-import { coupons, onlineOrders, paymentEvents } from "@/server/db/schema";
+import { coupons, onlineOrders, paymentEvents, type OnlineOrderStatus } from "@/server/db/schema";
 import { audit, type AuditActor } from "@/server/audit";
 import { auditActorOf, requirePermission, type Actor } from "@/server/auth/actor";
 import { badRequest, conflict, invalid, notFound, precondition } from "@/server/errors";
@@ -376,23 +376,48 @@ export async function reconcileRefund(orderId: string) {
 /** Staff: cancel a Razorpay-paid order and refund it in full, or retry a refund that failed. */
 export async function refundOnlineOrder(actor: Actor, id: string, input: { reason: string }) {
   requirePermission(actor, "payments.refund");
-  const reason = input.reason.trim();
+  await cancelAndRefund(id, { by: auditActorOf(actor), staffId: actor.id, reason: input.reason, allowed: ["paid", "confirmed", "ready"], who: "staff" });
+}
+
+/**
+ * Close a paid Razorpay order and give the full amount back. Staff can do this until the items are collected;
+ * the customer only until the shop confirms the order (see cancelMyOrder).
+ */
+export async function cancelAndRefund(
+  id: string,
+  opts: { by: AuditActor; staffId: string | null; reason: string; allowed: OnlineOrderStatus[]; who: "staff" | "customer"; accountId?: string },
+) {
   const db = getDb();
   await db.transaction(async (tx) => {
-    const [o] = await tx.select().from(onlineOrders).where(eq(onlineOrders.id, id)).for("update");
-    if (!o) throw notFound("Online order");
-    if (o.paymentMethod !== "razorpay") throw conflict("This order was paid by UPI QR; refund it at the counter.");
+    const [o] = await tx.select().from(onlineOrders).where(and(eq(onlineOrders.id, id), isNull(onlineOrders.deletedAt))).for("update");
+    if (!o || (opts.accountId && o.accountId !== opts.accountId)) throw notFound("Online order");
+    if (o.paymentMethod !== "razorpay") throw conflict(opts.who === "customer" ? "This order was paid by UPI to the shop. Please call the shop to cancel it; they refund it to you." : "This order was paid by UPI QR; refund it at the counter.");
     if (o.status === "refunding") {
       if (!canStartRefund(o)) throw conflict("A refund for this order is already in progress.");
-      await audit(tx, auditActorOf(actor), { action: "online_order.refund_retry", entityType: "online_order", entityId: o.id, summary: `Refund for ${o.orderNumber} retried` });
+      await audit(tx, opts.by, { action: "online_order.refund_retry", entityType: "online_order", entityId: o.id, summary: `Refund for ${o.orderNumber} retried` });
       return;
     }
-    if (!["paid", "ready"].includes(o.status)) throw conflict("Only a paid order that hasn't been collected can be refunded here.");
-    if (reason.length < 3) throw invalid("Say why the order is refunded");
-    await tx.update(onlineOrders).set({ status: "refunding", refundReason: reason.slice(0, 300), cancelledAt: new Date(), cancelReason: reason.slice(0, 300), handledBy: actor.id, updatedAt: new Date() }).where(eq(onlineOrders.id, o.id));
-    await audit(tx, auditActorOf(actor), { action: "online_order.refund_requested", entityType: "online_order", entityId: o.id, summary: `${o.orderNumber} cancelled and refunded (${formatPrice(o.total)}): ${reason}` });
+    if (!opts.allowed.includes(o.status)) {
+      throw conflict(
+        opts.who === "customer"
+          ? o.status === "confirmed" || o.status === "ready" || o.status === "collected"
+            ? "The shop has already confirmed this order, so it can't be cancelled here. Please call the shop."
+            : "This order can't be cancelled now."
+          : "Only a paid order that hasn't been collected can be refunded here.",
+      );
+    }
+    const reason = opts.reason.trim().slice(0, 300);
+    if (reason.length < 3) throw invalid(opts.who === "customer" ? "Please tell us briefly why you're cancelling" : "Say why the order is refunded");
+    await tx.update(onlineOrders).set({ status: "refunding", refundReason: reason, cancelledAt: new Date(), cancelReason: reason, handledBy: opts.staffId ?? o.handledBy, updatedAt: new Date() }).where(eq(onlineOrders.id, o.id));
+    await audit(tx, opts.by, {
+      action: opts.who === "customer" ? "online_order.cancelled_by_customer" : "online_order.refund_requested",
+      entityType: "online_order",
+      entityId: o.id,
+      summary: `${o.orderNumber} cancelled ${opts.who === "customer" ? "by the customer" : "by staff"} and refunded in full (${formatPrice(o.total)}): ${reason}`,
+      data: { orderNumber: o.orderNumber, previousStatus: o.status, amount: o.total, paymentId: o.gatewayTransactionId, reason },
+    });
   });
-  await startRefund(id, auditActorOf(actor));
+  await startRefund(id, opts.by);
 }
 
 /** Staff: ask Razorpay now instead of waiting for the schedule. */

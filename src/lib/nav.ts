@@ -56,6 +56,7 @@ export const STAFF_NAV: NavGroup[] = [
       { href: "/dashboard/staff", label: "Staff & access", icon: "shield", any: ["users.manage"] },
       { href: "/dashboard/settings", label: "Settings", icon: "settings", any: ["settings.business", "settings.tax", "settings.payment", "settings.documents", "discounts.configure"] },
       { href: "/dashboard/audit", label: "Audit log", icon: "history", any: ["audit.view"] },
+      { href: "/admin/logs/online-orders", label: "Online orders log", icon: "history", any: ["audit.view"] },
     ],
   },
 ];

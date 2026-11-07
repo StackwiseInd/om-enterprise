@@ -72,7 +72,7 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
       </div>
       <FilterBar
         fields={[
-          { kind: "search", name: "q", placeholder: "Name, mobile or email" },
+          { kind: "search", name: "q", placeholder: "Name, mobile, email, business, GSTIN, city" },
           {
             kind: "select",
             name: "filter",
@@ -112,6 +112,7 @@ async function WebsiteCustomers({ searchParams }: { searchParams: Promise<Search
                     <Link href={`/dashboard/website-customers/${c.id}`} className={nameLink}>
                       {c.name}
                     </Link>
+                    {(c.businessName || c.city) && <div className="mt-0.5 text-xs text-navy-600">{[c.businessName, c.city].filter(Boolean).join(" · ")}</div>}
                     <div className="mt-0.5 text-xs text-navy-500">{c.lastLoginAt ? <>Last sign-in <DateTime value={c.lastLoginAt} dateOnly /></> : "Never signed in again"}</div>
                   </td>
                   <td data-label="Mobile" className={tdCode}>

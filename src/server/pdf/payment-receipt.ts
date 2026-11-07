@@ -13,10 +13,10 @@ import { paymentModeLabel } from "@/lib/gateway";
 export interface ReceiptData {
   shop: { name: string; addressLines: string[]; phone: string | null; gstin: string | null };
   orderNumber: string;
-  status: "paid" | "ready" | "collected";
+  status: "paid" | "confirmed" | "ready" | "collected";
   paidAt: Date | null;
   collectedAt: Date | null;
-  customer: { name: string; mobile: string };
+  customer: { name: string; mobile: string; email: string | null; businessName: string | null; gstin: string | null; altMobile: string | null; address: string[] };
   lines: { name: string; variant: string; quantity: string; unit: string; unitPrice: string; lineTotal: string }[];
   subtotal: string;
   discount: string;
@@ -77,7 +77,7 @@ export async function renderPaymentReceiptPdf(r: ReceiptData): Promise<Buffer> {
   rule(100, NAVY, 1.2);
 
   // ---- Status band
-  const paidLabel = r.status === "collected" ? `PAID · COLLECTED ${when(r.collectedAt)}` : r.status === "ready" ? "PAID · READY FOR PICKUP" : "PAID";
+  const paidLabel = r.status === "collected" ? `PAID · COLLECTED ${when(r.collectedAt)}` : r.status === "ready" ? "PAID · READY FOR PICKUP" : r.status === "confirmed" ? "PAID · CONFIRMED BY THE SHOP" : "PAID";
   doc.roundedRect(M, 112, W - 2 * M, 34, 4).fillColor("#ecfdf5").fill();
   text(paidLabel, M + 14, 122, { size: 12, font: "B", color: GREEN });
   text(`Total paid ${formatINR(r.total)}`, W - M - 214, 122, { size: 12, font: "B", color: GREEN, w: 200, align: "right" });
@@ -89,7 +89,11 @@ export async function renderPaymentReceiptPdf(r: ReceiptData): Promise<Buffer> {
     ["Order number", r.orderNumber],
     ["Paid on", when(r.paidAt)],
     ["Customer", r.customer.name],
-    ["Mobile", r.customer.mobile],
+    ...(r.customer.businessName ? ([["Business", r.customer.businessName]] as [string, string][]) : []),
+    ...(r.customer.gstin ? ([["Customer GSTIN", r.customer.gstin]] as [string, string][]) : []),
+    ["Mobile", [r.customer.mobile, r.customer.altMobile].filter(Boolean).join(" / ")],
+    ...(r.customer.email ? ([["Email", r.customer.email]] as [string, string][]) : []),
+    ...(r.customer.address.length ? ([["Address", r.customer.address.join(", ")]] as [string, string][]) : []),
   ];
   const right: [string, string][] = [
     ["Paid through", r.payment.gateway + (method ? ` (${method})` : "")],

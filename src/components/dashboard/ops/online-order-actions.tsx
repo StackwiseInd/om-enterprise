@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, PackageCheck, PackageOpen, RefreshCw, Undo2, XCircle } from "lucide-react";
+import { BadgeCheck, ClipboardCheck, PackageCheck, PackageOpen, RefreshCw, Undo2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Textarea } from "@/components/ui/field";
@@ -82,7 +82,7 @@ export function OnlineOrderActions({
           </Button>
         </>
       )}
-      {gateway && (status === "paid" || status === "ready") && canRefund && (
+      {gateway && (status === "paid" || status === "confirmed" || status === "ready") && canRefund && (
         <Button variant="outline" icon={<Undo2 className="h-4 w-4" />} onClick={() => setOpen("refund")}>
           Cancel and refund
         </Button>
@@ -121,11 +121,16 @@ export function OnlineOrderActions({
         </>
       )}
       {status === "paid" && canManage && (
-        <Button icon={<PackageOpen className="h-4 w-4" />} onClick={() => call("status", { status: "ready" }, "Marked ready for pickup")} loading={busy}>
+        <Button variant="success" icon={<ClipboardCheck className="h-4 w-4" />} onClick={() => call("status", { status: "confirmed" }, "Order confirmed — the customer can no longer cancel it")} loading={busy}>
+          Confirm order
+        </Button>
+      )}
+      {(status === "paid" || status === "confirmed") && canManage && (
+        <Button variant={status === "confirmed" ? "primary" : "outline"} icon={<PackageOpen className="h-4 w-4" />} onClick={() => call("status", { status: "ready" }, "Marked ready for pickup")} loading={busy}>
           Ready for pickup
         </Button>
       )}
-      {(status === "paid" || status === "ready") && canManage && (
+      {(status === "paid" || status === "confirmed" || status === "ready") && canManage && (
         <Button variant={status === "ready" ? "primary" : "outline"} icon={<PackageCheck className="h-4 w-4" />} onClick={() => setOpen("handover")}>
           Handed over (collected)
         </Button>

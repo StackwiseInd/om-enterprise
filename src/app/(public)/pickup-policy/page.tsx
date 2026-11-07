@@ -37,7 +37,8 @@ const sections = (b: Business) => [
     body: (
       <Bullets
         items={[
-          "Once Razorpay confirms your payment, the order page shows “Order placed” and we start keeping the items ready.",
+          "Once Razorpay confirms your payment, the order page shows “Order placed”. Until we confirm the order you can still cancel it there for a full refund.",
+          "When we confirm it, the page shows “Confirmed by the shop” and we start keeping the items ready.",
           "Items in stock are usually ready the same working day, during shop hours. When the order is packed, the page shows “Ready for pickup”.",
           "If an item has to be ordered in, we call you with the expected date before you travel.",
           "Please collect within 7 days of the order being ready. If you need longer, tell us and we'll keep it aside.",
