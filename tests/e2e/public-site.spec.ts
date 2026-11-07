@@ -80,6 +80,16 @@ test.describe("public website", () => {
     expect(staff.headers()["content-security-policy"]).not.toContain("frame-src");
   });
 
+  test("a customer's wrong password is an error on their own sign-in page, not the staff login", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.fill("#sh-mobile", "9825099999");
+    await page.fill("#sh-password", "not-the-password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByText("Wrong mobile number or password")).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-in/);
+    await expect(page.getByLabel("Mobile number")).toBeVisible();
+  });
+
   test("an invalid share link shows a friendly page and no data", async ({ page }) => {
     // Streaming pages can't change the HTTP status once the shell is sent; what matters is that
     // nothing is revealed and the page is not indexed.

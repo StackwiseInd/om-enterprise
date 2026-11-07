@@ -1139,6 +1139,8 @@ export const shopAccounts = pgTable(
     name: text("name").notNull(),
     mobile: text("mobile").notNull().unique(),
     email: text("email"),
+    /** Set when the customer entered the code emailed to this address. */
+    emailVerifiedAt: ts("email_verified_at"),
     passwordHash: text("password_hash").notNull(),
     isActive: boolean("is_active").notNull().default(true),
     failedLoginCount: integer("failed_login_count").notNull().default(0),
@@ -1146,6 +1148,29 @@ export const shopAccounts = pgTable(
     lastLoginAt: ts("last_login_at"),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
+  // One account per verified email address.
+  (t) => [uniqueIndex("shop_accounts_email_verified_uq").on(sql`lower(${t.email})`).where(sql`${t.emailVerifiedAt} is not null`)],
+);
+
+/**
+ * One-time codes emailed to a customer to prove an email address (at sign-up, or before paying). Only a keyed
+ * hash of the code is kept; it expires, allows a few wrong tries, and works once.
+ */
+export const shopOtps = pgTable(
+  "shop_otp_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    purpose: text("purpose").$type<"sign_up" | "verify">().notNull(),
+    email: text("email").notNull(),
+    accountId: uuid("account_id").references(() => shopAccounts.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: ts("expires_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    consumedAt: ts("consumed_at"),
+    ipHash: text("ip_hash"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("shop_otp_email_idx").on(t.email, t.purpose, t.createdAt)],
 );
 
 export const shopSessions = pgTable(

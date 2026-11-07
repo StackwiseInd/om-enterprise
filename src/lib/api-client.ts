@@ -42,8 +42,14 @@ export async function apiFetch<T = unknown>(path: string, opts: { method?: Metho
     const err = json.error ?? { code: "INTERNAL", message: `Request failed (${res.status})`, details: null };
     // Session ended / password change required: full navigation so no stale client state remains.
     /* eslint-disable @next/next/no-location-assign-relative-destination */
-    if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/api/auth/login") && !path.startsWith("/api/public")) {
-      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    if (res.status === 401 && typeof window !== "undefined") {
+      if (path.startsWith("/api/shop/")) {
+        // A website customer: a wrong password is just an error on the form; an ended session goes back to the
+        // customer sign-in (never to the staff login).
+        if (!path.startsWith("/api/shop/auth/")) window.location.href = `/sign-in?next=${encodeURIComponent(window.location.pathname)}`;
+      } else if (!path.startsWith("/api/auth/login") && !path.startsWith("/api/public")) {
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+      }
     }
     if (err.details?.mustChangePassword && typeof window !== "undefined") {
       window.location.href = "/account/password?required=1";

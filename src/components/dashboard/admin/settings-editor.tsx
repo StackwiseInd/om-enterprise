@@ -148,6 +148,7 @@ const SECTIONS: Record<SectionKey, { title: string; description: string; fields:
       { key: "showPrices", label: "Show prices on the website", type: "checkbox" },
       { key: "priceNote", label: "Price note", type: "textarea", wide: true },
       { key: "enquiriesEnabled", label: "Accept online enquiries and order requests", type: "checkbox" },
+      { key: "requireEmailVerification", label: "Verify customers' email with a code at sign-up and before paying", type: "checkbox", hint: "Works while email sending is set up. If the codes stop arriving, switch this off so customers can still order." },
       { key: "heroTitle", label: "Homepage headline", type: "text", wide: true },
       { key: "heroSubtitle", label: "Homepage sub-headline", type: "textarea", wide: true },
     ],

@@ -14,6 +14,7 @@ import { customerAuditActor, type ShopAccount } from "@/server/services/shop-aut
 import { GATEWAY_PAY_SECONDS, GATEWAY_TIMEOUT_REASON, gatewayEnabled, mayAskNow, openGatewayCheckout, reconcileOpenOrders, reconcileOrder, retryGatewayPayment, type CheckoutParams } from "@/server/services/online-payments";
 import { gatewayName, isGatewayMethod, type PaymentMethod } from "@/lib/gateway";
 import { hasReceipt, receiptCodeFor } from "@/server/services/online-receipt";
+import { emailVerificationRequired } from "@/server/services/shop-otp";
 import { buildUpiUri, isValidUpiUtr } from "@/lib/india";
 import { D, formatPrice, m } from "@/lib/money";
 
@@ -93,6 +94,10 @@ export async function previewCheckout(account: ShopAccount, input: { items: Item
 }
 
 export async function placeOnlineOrder(account: ShopAccount, input: { items: Item[]; couponCode?: string | null }, client: Client) {
+  // While email checking is on, only customers who proved their email address can pay.
+  if (!account.emailVerifiedAt && (await emailVerificationRequired())) {
+    throw precondition("Please verify your email address before paying. We'll send a code to it.", { needsEmailVerification: true });
+  }
   await enforceRateLimit(`online-order:${account.id}`, 10, 60 * 60, "Too many orders in an hour. Please wait a little.");
   const gateway = gatewayEnabled();
   const pay = gateway ? null : await upiConfig();

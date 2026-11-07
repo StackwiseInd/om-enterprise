@@ -6,16 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
 import { apiFetch, errorMessage } from "@/lib/api-client";
-import { normalizeMobile } from "@/lib/india";
+import { isValidEmail, normalizeMobile } from "@/lib/india";
+import { EmailCodeInput } from "./email-code-input";
 
 /** Only same-site paths may be the place to return to after signing in. */
 function safeNext(next: string | null | undefined) {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/my-orders";
 }
 
-export function ShopAuthForm({ mode, next }: { mode: "sign-in" | "sign-up"; next?: string | null }) {
+export function ShopAuthForm({ mode, next, verifyEmail = false }: { mode: "sign-in" | "sign-up"; next?: string | null; /** Sign-up asks for an email and the code emailed to it. */ verifyEmail?: boolean }) {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", mobile: "", password: "", email: "" });
+  const [form, setForm] = useState({ name: "", mobile: "", password: "", email: "", code: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -28,6 +29,10 @@ export function ShopAuthForm({ mode, next }: { mode: "sign-in" | "sign-up"; next
     if (mode === "sign-up" && form.name.trim().length < 2) errs.name = "Please enter your name";
     if (!normalizeMobile(form.mobile)) errs.mobile = "Enter your 10-digit mobile number";
     if (mode === "sign-up" && form.password.length < 8) errs.password = "Use at least 8 characters";
+    if (mode === "sign-up" && verifyEmail) {
+      if (!isValidEmail(form.email)) errs.email = "Enter your email address";
+      else if (!/^\d{6}$/.test(form.code)) errs.code = "Enter the 6-digit code from the email";
+    }
     if (mode === "sign-in" && !form.password) errs.password = "Enter your password";
     setErrors(errs);
     if (Object.keys(errs).length) return;
@@ -35,7 +40,7 @@ export function ShopAuthForm({ mode, next }: { mode: "sign-in" | "sign-up"; next
     setServerError(null);
     try {
       await apiFetch(mode === "sign-up" ? "/api/shop/auth/signup" : "/api/shop/auth/signin", {
-        body: mode === "sign-up" ? { name: form.name.trim(), mobile: form.mobile.trim(), password: form.password, email: form.email.trim() || null } : { mobile: form.mobile.trim(), password: form.password },
+        body: mode === "sign-up" ? { name: form.name.trim(), mobile: form.mobile.trim(), password: form.password, email: form.email.trim() || null, emailCode: verifyEmail ? form.code : null } : { mobile: form.mobile.trim(), password: form.password },
       });
       router.replace(target);
       router.refresh();
@@ -61,10 +66,11 @@ export function ShopAuthForm({ mode, next }: { mode: "sign-in" | "sign-up"; next
         <Input id="sh-password" type="password" autoComplete={mode === "sign-up" ? "new-password" : "current-password"} value={form.password} onChange={set("password")} />
       </Field>
       {mode === "sign-up" && (
-        <Field label="Email (optional)" htmlFor="sh-email">
+        <Field label={verifyEmail ? "Email" : "Email (optional)"} htmlFor="sh-email" required={verifyEmail} error={errors.email} hint={verifyEmail ? "We email a code to confirm it's yours." : undefined}>
           <Input id="sh-email" type="email" autoComplete="email" value={form.email} onChange={set("email")} />
         </Field>
       )}
+      {mode === "sign-up" && verifyEmail && <EmailCodeInput email={form.email} sendPath="/api/shop/auth/email-code" code={form.code} onCodeChange={(v) => setForm((f) => ({ ...f, code: v }))} error={errors.code} />}
       <Button type="submit" loading={busy} className="h-12 w-full text-[15px]">
         {mode === "sign-up" ? "Create account" : "Sign in"}
       </Button>

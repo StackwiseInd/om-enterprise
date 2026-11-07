@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Alert } from "@/components/ui/page";
 import { ShopMap } from "./shop-map";
+import { EmailCodeInput } from "./email-code-input";
 import { gatewayName, isGatewayMethod, type PaymentMethod } from "@/lib/gateway";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatPhone } from "@/lib/india";
@@ -21,7 +22,7 @@ interface Preview {
   total: string;
 }
 
-export function CheckoutView({ account, pickup, shopName, mode, map }: { account: { name: string; mobile: string }; pickup: string; shopName: string; mode: PaymentMethod | null; map: { embedUrl: string; opensHref: string; directionsHref: string } }) {
+export function CheckoutView({ account, needsEmail = false, pickup, shopName, mode, map }: { account: { name: string; mobile: string; email: string | null }; /** The customer has to prove an email address before paying. */ needsEmail?: boolean; pickup: string; shopName: string; mode: PaymentMethod | null; map: { embedUrl: string; opensHref: string; directionsHref: string } }) {
   const onlinePay = mode !== null;
   const router = useRouter();
   const cart = useEnquiryList();
@@ -161,9 +162,13 @@ export function CheckoutView({ account, pickup, shopName, mode, map }: { account
             )}
             <div className="flex items-baseline justify-between border-t border-navy-100 pt-3"><dt className="font-semibold text-navy-950">To pay</dt><dd className="tabular text-2xl font-semibold tracking-[-0.02em] text-navy-950">{preview ? formatPrice(preview.total) : "…"}</dd></div>
           </dl>
-          <Button onClick={place} loading={busy === "place"} disabled={!preview || !!error} className="h-12 w-full text-[15px]">
-            Place order and pay {preview ? formatPrice(preview.total) : ""}
-          </Button>
+          {needsEmail ? (
+            <VerifyEmailCard initialEmail={account.email ?? ""} />
+          ) : (
+            <Button onClick={place} loading={busy === "place"} disabled={!preview || !!error} className="h-12 w-full text-[15px]">
+              Place order and pay {preview ? formatPrice(preview.total) : ""}
+            </Button>
+          )}
           <p className="text-xs leading-relaxed text-navy-500">
             {isGatewayMethod(mode)
               ? `You'll pay in ${gatewayName(mode)}'s secure window by UPI, card, net banking or wallet. As soon as ${gatewayName(mode)} confirms the payment, your order is placed.`
@@ -210,6 +215,43 @@ function WaitingOrders() {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** One step before paying: prove the email address with a code (for accounts made before codes were asked for). */
+function VerifyEmailCard({ initialEmail }: { initialEmail: string }) {
+  const router = useRouter();
+  const [email, setEmail] = useState(initialEmail);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const confirm = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch("/api/shop/account/verify-email", { body: { email: email.trim(), code } });
+      router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-3 rounded-xl border border-gold-300 bg-gold-50/50 p-4">
+      <div>
+        <div className="font-semibold text-navy-950">Verify your email to pay</div>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-navy-600">We email you a code once, to confirm this account is yours. It also lets us send you your order updates.</p>
+      </div>
+      <div>
+        <label htmlFor="vc-email" className="mb-1.5 block text-[13px] font-medium text-navy-700">Email</label>
+        <Input id="vc-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11" />
+      </div>
+      <EmailCodeInput email={email} sendPath="/api/shop/account/email-code" code={code} onCodeChange={setCode} />
+      {error && <Alert tone="danger">{error}</Alert>}
+      <Button type="button" loading={busy} disabled={!/^\d{6}$/.test(code)} onClick={confirm} className="h-12 w-full text-[15px]">
+        Verify and continue
+      </Button>
     </div>
   );
 }

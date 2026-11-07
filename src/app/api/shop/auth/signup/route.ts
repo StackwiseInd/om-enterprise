@@ -9,6 +9,7 @@ const body = z.object({
   mobile: z.string().trim().min(10).max(20),
   password: z.string().min(1).max(200),
   email: z.string().trim().max(120).optional().nullable(),
+  emailCode: z.string().trim().max(12).optional().nullable(),
 });
 
 /** Website customer sign-up; signs the customer in straight away. */

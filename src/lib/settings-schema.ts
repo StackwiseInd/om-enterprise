@@ -145,6 +145,8 @@ export const websiteSchema = z.object({
   showPrices: z.boolean(),
   priceNote: z.string().trim().max(300),
   enquiriesEnabled: z.boolean(),
+  /** Customers must enter a code emailed to them to create an account and before paying (only while email sending is set up). */
+  requireEmailVerification: z.boolean(),
   heroTitle: z.string().trim().max(120),
   heroSubtitle: z.string().trim().max(300),
 });
@@ -262,6 +264,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   },
   website: {
     showPrices: true,
+    requireEmailVerification: true,
     priceNote:
       "Prices shown are our current selling prices (inclusive of GST where applicable) and are confirmed at billing.",
     enquiriesEnabled: true,

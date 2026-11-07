@@ -2,6 +2,7 @@ import { gatewayName, isGatewayMethod } from "@/lib/gateway";
 import { Suspense } from "react";
 import Link from "next/link";
 import { requirePageActor } from "@/server/auth/session";
+import { can } from "@/server/auth/actor";
 import { listOnlineOrders } from "@/server/services/online-orders";
 import { EmptyState, PageHeader, PageSkeleton, TableWrap } from "@/components/ui/page";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,7 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
   const sp = await searchParams;
   const status = str(sp, "status") as OnlineOrderStatus | "to_verify" | undefined;
   const q = str(sp, "q");
+  const canCustomers = can(actor, "customers.view");
   const rows = await listOnlineOrders(actor, status || undefined, q || undefined);
   const toCheck = rows.filter((r) => r.o.status === "payment_submitted").length;
 
@@ -95,7 +97,13 @@ async function Orders({ searchParams }: { searchParams: Promise<SearchParams> })
                     <DateTime value={o.createdAt} />
                   </td>
                   <td data-label="Customer" className={tdText}>
-                    <div className="font-medium">{o.customerName}</div>
+                    {canCustomers ? (
+                      <Link href={`/dashboard/website-customers/${o.accountId}`} className="font-medium underline-offset-[3px] hover:underline">
+                        {o.customerName}
+                      </Link>
+                    ) : (
+                      <div className="font-medium">{o.customerName}</div>
+                    )}
                     <div className="tabular text-xs text-navy-500">{o.mobile}</div>
                   </td>
                   <td data-label="Items" className={tdNum}>{itemCount}</td>

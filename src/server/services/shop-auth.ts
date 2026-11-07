@@ -8,6 +8,7 @@ import { AppError, conflict, invalid } from "@/server/errors";
 import { getDummyHash, hashPassword, verifyPassword } from "@/server/auth/password";
 import { enforceRateLimit, hashIp } from "@/server/rate-limit";
 import { hashToken } from "@/server/services/auth";
+import { consumeEmailCode, emailVerificationRequired } from "@/server/services/shop-otp";
 import { formatPhone, isValidEmail, normalizeMobile } from "@/lib/india";
 
 /**
@@ -26,6 +27,8 @@ export interface ShopAccount {
   name: string;
   mobile: string;
   email: string | null;
+  /** When the customer proved the email address with an emailed code; null if not (yet). */
+  emailVerifiedAt: Date | null;
 }
 
 interface Client {
@@ -44,24 +47,31 @@ async function startSession(accountId: string) {
   return { token, expiresAt };
 }
 
-export async function shopSignUp(input: { name: string; mobile: string; password: string; email?: string | null }, client: Client) {
+export async function shopSignUp(input: { name: string; mobile: string; password: string; email?: string | null; emailCode?: string | null }, client: Client) {
   await enforceRateLimit(`shop-signup:${hashIp(client.ip)}`, 5, 60 * 60, "Too many new accounts from this device. Please try again in an hour.");
   const name = input.name.trim().replace(/\s+/g, " ");
   if (name.length < 2 || name.length > 80) throw invalid("Please enter your name");
   const mobile = normalizeMobile(input.mobile);
   if (!mobile) throw invalid("Please enter a valid 10-digit mobile number");
-  const email = input.email?.trim() || null;
+  const email = input.email?.trim().toLowerCase() || null;
   if (email && !isValidEmail(email)) throw invalid("Please enter a valid email address");
+  // While email checking is on, the account is made only after the customer enters the code emailed to them.
+  const verify = await emailVerificationRequired();
+  if (verify && !email) throw invalid("Please enter your email address. We send a code to it to verify your account.");
   if (input.password.length < SHOP_PASSWORD_MIN) throw invalid(`Choose a password of at least ${SHOP_PASSWORD_MIN} characters`);
   if (input.password.length > 200) throw invalid("That password is too long");
 
   const db = getDb();
   const [existing] = await db.select({ id: shopAccounts.id }).from(shopAccounts).where(eq(shopAccounts.mobile, mobile));
   if (existing) throw conflict("An account with this mobile number already exists. Please sign in.");
+  if (verify) {
+    if (!input.emailCode?.trim()) throw invalid("Enter the 6-digit code we emailed you");
+    await consumeEmailCode({ email: email!, purpose: "sign_up", code: input.emailCode });
+  }
   const passwordHash = await hashPassword(input.password);
   const account = await db.transaction(async (tx) => {
-    const [a] = await tx.insert(shopAccounts).values({ name, mobile, email, passwordHash }).returning();
-    await audit(tx, customerAuditActor(a, client), { action: "shop.signup", entityType: "shop_account", entityId: a.id, summary: `New website account ${name} (${formatPhone(mobile)})` });
+    const [a] = await tx.insert(shopAccounts).values({ name, mobile, email, emailVerifiedAt: verify ? new Date() : null, passwordHash }).returning();
+    await audit(tx, customerAuditActor(a, client), { action: "shop.signup", entityType: "shop_account", entityId: a.id, summary: `New website account ${name} (${formatPhone(mobile)})${verify ? ", email verified" : ""}` });
     return a;
   });
   const session = await startSession(account.id);
@@ -118,5 +128,17 @@ export async function shopSignOut(token: string | undefined | null) {
 }
 
 function toAccount(a: typeof shopAccounts.$inferSelect): ShopAccount {
-  return { id: a.id, name: a.name, mobile: a.mobile, email: a.email };
+  return { id: a.id, name: a.name, mobile: a.mobile, email: a.email, emailVerifiedAt: a.emailVerifiedAt };
+}
+
+/** A signed-in customer proves (or changes to) an email address with the code emailed to it. */
+export async function verifyAccountEmail(account: ShopAccount, input: { email: string; code: string }, client: Client) {
+  const email = await consumeEmailCode({ email: input.email, purpose: "verify", code: input.code, accountId: account.id });
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx.update(shopAccounts).set({ email, emailVerifiedAt: new Date() }).where(eq(shopAccounts.id, account.id));
+    await audit(tx, customerAuditActor(account, client), { action: "shop.email_verified", entityType: "shop_account", entityId: account.id, summary: `Website account verified email ${email}` });
+  });
+  const [a] = await db.select().from(shopAccounts).where(eq(shopAccounts.id, account.id));
+  return toAccount(a);
 }

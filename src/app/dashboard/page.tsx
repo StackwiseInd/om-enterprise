@@ -17,6 +17,7 @@ import { Money, DateTime, Qty } from "@/components/ui/money";
 import { StatusBadge } from "@/components/ui/badge";
 import { CASH_SALE, TrainingBadge, plural } from "@/components/staff/labels";
 import { SalesChart, type DayPoint } from "@/components/dashboard/ops/sales-chart";
+import { OnlineCustomersCard } from "@/components/dashboard/online-customers-card";
 import { istDateKey } from "@/components/dashboard/ops/params";
 import { rowHover, tdNum, tdText, th, thNum } from "@/components/dashboard/table";
 
@@ -179,6 +180,8 @@ async function Overview() {
       ) : (
         <ActionItems pendingDiscounts={pendingDiscounts} pendingPrices={pendingPrices} newOrders={newOrders} pendingPayments={null} showOrders={can(actor, "orders.view")} showApprovals={can(actor, "discounts.approve") || can(actor, "prices.approve")} />
       )}
+
+      {can(actor, "customers.view") && <OnlineCustomersCard actor={actor} />}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {canReports && (

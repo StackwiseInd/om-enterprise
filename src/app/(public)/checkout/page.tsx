@@ -7,6 +7,7 @@ import { CheckoutView } from "@/components/public/checkout-view";
 import { getSiteData, addressShort, directionsHref, mapsHref } from "@/components/public/site-data";
 import { getShopAccount } from "@/server/auth/shop-session";
 import { onlinePaymentMode } from "@/server/services/online-orders";
+import { emailVerificationRequired } from "@/server/services/shop-otp";
 
 export const metadata: Metadata = { title: "Checkout", robots: { index: false } };
 
@@ -28,5 +29,6 @@ async function Content() {
   if (!account) redirect("/sign-in?next=/checkout");
   const { business } = await getSiteData();
   const mode = await onlinePaymentMode();
-  return <CheckoutView account={{ name: account.name, mobile: account.mobile }} pickup={addressShort(business)} shopName={business.name} mode={mode} map={{ embedUrl: business.mapEmbedUrl, opensHref: mapsHref(business), directionsHref: directionsHref(business) }} />;
+  const needsEmail = !account.emailVerifiedAt && (await emailVerificationRequired());
+  return <CheckoutView account={{ name: account.name, mobile: account.mobile, email: account.email }} needsEmail={needsEmail} pickup={addressShort(business)} shopName={business.name} mode={mode} map={{ embedUrl: business.mapEmbedUrl, opensHref: mapsHref(business), directionsHref: directionsHref(business) }} />;
 }

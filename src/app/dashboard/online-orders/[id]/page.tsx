@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import { MessageCircle, Phone } from "lucide-react";
+import Link from "next/link";
+import { MessageCircle, Phone, UserRound } from "lucide-react";
 import { requirePageActor } from "@/server/auth/session";
 import { gatewayName, isGatewayMethod } from "@/lib/gateway";
 import { can } from "@/server/auth/actor";
@@ -202,6 +203,11 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
               <a href={whatsappLink(o.mobile, `Namaste ${o.customerName}, about your online order ${o.orderNumber} at OM ENTERPRISE.`)} target="_blank" rel="noopener noreferrer" className={buttonClass("success")}>
                 <MessageCircle className="h-4 w-4" /> WhatsApp
               </a>
+              {can(actor, "customers.view") && (
+                <Link href={`/dashboard/website-customers/${o.accountId}`} className={buttonClass("outline")}>
+                  <UserRound className="h-4 w-4" /> Customer record
+                </Link>
+              )}
             </CardBody>
           </Card>
           <Card>
